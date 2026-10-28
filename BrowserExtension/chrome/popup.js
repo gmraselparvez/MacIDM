@@ -1,5 +1,9 @@
 const api = typeof browser !== "undefined" ? browser : chrome;
 const $ = (id) => document.getElementById(id);
+globalThis.MacIDMShortcuts.watch((s) => {
+  $("keyGrabber").textContent = MacIDMShortcuts.label(s.shortcutGrabber);
+  $("keyPinterest").textContent = MacIDMShortcuts.label(s.shortcutPinterest);
+});
 
 (async () => {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });

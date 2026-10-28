@@ -250,4 +250,15 @@
   api.runtime.onMessage.addListener((message) => {
     if (message?.type === "openImageGrabber") open();
   });
+
+  // The page shortcut from the extension options (⌥⇧I by default), in top-level pages only.
+  if (window === top && globalThis.MacIDMShortcuts) {
+    const keys = globalThis.MacIDMShortcuts.watch(() => {});
+    window.addEventListener("keydown", (e) => {
+      if (!globalThis.MacIDMShortcuts.matches(e, keys.shortcutGrabber)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      open();
+    }, true);
+  }
 })();

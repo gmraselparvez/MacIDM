@@ -98,7 +98,7 @@ async function openImageGrabber(tabId) {
     return { ok: true };
   } catch {
     try {
-      await api.scripting.executeScript({ target: { tabId }, files: ["grabber.js"] });
+      await api.scripting.executeScript({ target: { tabId }, files: ["shortcuts.js", "grabber.js"] });
       await api.tabs.sendMessage(tabId, { type: "openImageGrabber" });
       return { ok: true };
     } catch (e) {

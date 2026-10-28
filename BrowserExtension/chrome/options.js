@@ -36,3 +36,49 @@ $("test").addEventListener("click", async () => {
     $("status").className = "bad";
   }
 });
+
+// Shortcuts: click Change, press the keys; Esc cancels.
+const S = globalThis.MacIDMShortcuts;
+let shortcuts = S.watch((current) => {
+  for (const key of Object.keys(S.DEFAULTS)) $("keys-" + key).textContent = S.label(current[key]);
+});
+let recording = null;
+for (const b of document.querySelectorAll("[data-record]")) {
+  b.addEventListener("click", () => {
+    recording = b.dataset.record;
+    const box = $("keys-" + recording);
+    box.textContent = "Press keys…";
+    box.classList.add("recording");
+    $("shortcutHint").textContent = "Press the new shortcut, or Esc to cancel.";
+  });
+}
+for (const b of document.querySelectorAll("[data-reset]")) {
+  b.addEventListener("click", () => api.storage.sync.set({ [b.dataset.reset]: S.DEFAULTS[b.dataset.reset] }));
+}
+document.addEventListener("keydown", (e) => {
+  if (!recording) return;
+  e.preventDefault();
+  const key = recording;
+  const box = $("keys-" + key);
+  if (e.code === "Escape") {
+    recording = null;
+    box.classList.remove("recording");
+    box.textContent = S.label(shortcuts[key]);
+    $("shortcutHint").textContent = "Cancelled.";
+    return;
+  }
+  const s = S.fromEvent(e);
+  if (!s) {
+    // Show what the browser reported, so problems with a key are visible.
+    $("shortcutHint").textContent = `Got "${e.code}"${e.altKey ? " + Option" : ""}${e.shiftKey ? " + Shift" : ""}. Add ⌥, ⌃ or ⌘ (or use an F-key).`;
+    return;
+  }
+  recording = null;
+  box.classList.remove("recording");
+  api.storage.sync.set({ [key]: s });
+  $("shortcutHint").textContent = `Saved ${S.label(s)}. Refresh open tabs to use it there.`;
+}, true);
+$("chromeShortcuts").addEventListener("click", (e) => {
+  e.preventDefault();
+  api.tabs.create({ url: "chrome://extensions/shortcuts" });
+});
