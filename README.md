@@ -11,6 +11,7 @@ Parallel segmented downloads, reliable resume, browser integration and a one-cli
 ![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white)
 ![SwiftUI](https://img.shields.io/badge/UI-SwiftUI-0A84FF)
 ![Tests](https://img.shields.io/badge/tests-66%20passing-34C759)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Chrome extension](https://img.shields.io/badge/Chrome%20%7C%20Edge%20%7C%20Brave-extension-4285F4?logo=googlechrome&logoColor=white)
 
 <img src="docs/screenshots/main.png" width="820" alt="MacIDM main window">
@@ -150,6 +151,10 @@ Run the tests with `swift test`. Launch with `MACIDM_DEMO=1` to show sample down
 ## Releasing
 
 Developer ID signing, notarization and DMG packaging are covered in [docs/RELEASING.md](docs/RELEASING.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE). yt-dlp is released under the Unlicense; FFmpeg isn't bundled (it uses LGPL/GPL licenses, so check them before bundling a build).
 
 ## Acknowledgments
 
