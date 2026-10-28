@@ -59,7 +59,7 @@ Requires macOS 13 Ventura or later on an Apple silicon Mac.
 
 **Optional:** for HD video (which arrives as separate picture and sound) and MP3/M4A conversion, install ffmpeg with [Homebrew](https://brew.sh): `brew install ffmpeg`.
 
-### Connect your browser (Chrome, Edge, Brave)
+### Connect your browser (Chrome, Brave, Edge)
 
 1. In MacIDM, open **Settings › Browser** and click **Set Up** next to your browser.
 2. MacIDM opens the browser's Extensions page and copies the extension folder path. Turn on **Developer mode**, click **Load unpacked**, press **⇧⌘G**, paste, and choose **Select**.
@@ -123,7 +123,7 @@ flowchart LR
 | `Sources/MacIDMCore` | UI-independent engine: probing, segment planning, parallel chunked download, merge, resume, speed limiter, queue, scheduler, yt-dlp and Pinterest integration |
 | `Sources/MacIDM` | SwiftUI app: main window, download windows, settings, menu bar |
 | `Sources/MacIDMHost` | Native-messaging helper for the browser extension |
-| `BrowserExtension/` | Chrome/Edge/Brave MV3 extension (video button, image grabber, Pinterest), plus a Safari handler (needs Xcode) |
+| `BrowserExtension/` | One MV3 extension for Chrome, Brave and Edge (`chrome/`) (video button, image grabber, Pinterest), plus a Safari handler (needs Xcode) |
 | `Tests/MacIDMCoreTests` | swift-testing suites |
 
 ## Feedback & requests
