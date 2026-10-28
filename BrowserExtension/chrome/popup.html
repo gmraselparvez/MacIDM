@@ -10,7 +10,8 @@
     button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0; border-radius: 8px;
       background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
     button:hover { background: rgba(127,127,127,.15); }
-    button .icon { width: 22px; text-align: center; font-size: 16px; }
+    button .icon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7;
+      stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
     button small { display: block; opacity: .6; font-size: 11px; }
     .hidden { display: none; }
     #status { margin: 6px 8px 2px; font-size: 11.5px; opacity: .7; min-height: 14px; }
@@ -19,10 +20,10 @@
 </head>
 <body>
   <h1>MacIDM</h1>
-  <button id="images"><span class="icon">🖼</span><span>Grab images from this page<small>Works even where right-click is blocked · ⌥⇧I</small></span></button>
-  <button id="pinterest" class="hidden"><span class="icon">📌</span><span id="pinterestLabel">Download this board<small>All images and videos, original size · ⌥⇧P</small></span></button>
+  <button id="images"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5.2-5.2L6 20"/></svg><span>Grab images from this page<small>Works even where right-click is blocked · ⌥⇧I</small></span></button>
+  <button id="pinterest" class="hidden"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><path d="M17.25 13.5v7.5M13.5 17.25h7.5"/></svg><span id="pinterestLabel">Download this board<small>All images and videos, original size · ⌥⇧P</small></span></button>
   <hr>
-  <button id="options"><span class="icon">⚙︎</span><span>Extension options</span></button>
+  <button id="options"><svg class="icon" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Extension options</span></button>
   <div id="status"></div>
   <script src="popup.js"></script>
 </body>

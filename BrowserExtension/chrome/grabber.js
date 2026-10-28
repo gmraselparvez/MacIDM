@@ -120,7 +120,7 @@
       button.primary { background: rgb(22,110,240); color: #fff; font-weight: 600; }
       button.primary:hover { background: rgb(40,125,250); }
       button[disabled] { opacity: .4; pointer-events: none; }
-      .close { padding: 4px 9px; font-size: 15px; }
+      .close { padding: 7px 9px; display: inline-flex; align-items: center; }
       /* Masonry: columns of images at their natural shape. */
       .grid { flex: 1; overflow-y: auto; padding: 14px; }
       .masonry { columns: 170px; column-gap: 12px; }
@@ -132,7 +132,8 @@
       .tile .check { position: absolute; top: 7px; left: 7px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0,0,0,.45);
         border: 2px solid rgba(255,255,255,.85); box-sizing: border-box; }
       .tile.on .check { background: rgb(22,110,240); border-color: #fff; }
-      .tile.on .check::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: #fff; font-weight: 700; }
+      .tile.on .check::after { content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px;
+        border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
       .tile .dims { position: absolute; bottom: 6px; right: 6px; padding: 1px 6px; border-radius: 5px; background: rgba(0,0,0,.6); font-size: 10.5px; }
       .tile.hidden { display: none; }
       .empty { column-span: all; text-align: center; padding: 60px 0; opacity: .6; }
@@ -150,7 +151,7 @@
             <option value="1000">1000 px or larger</option>
           </select>
           <button class="all">Select all</button><button class="none">Select none</button>
-          <button class="close" title="Close (Esc)">✕</button>
+          <button class="close" title="Close (Esc)"><svg viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg></button>
         </header>
         <div class="grid"><div class="masonry"></div></div>
         <footer>

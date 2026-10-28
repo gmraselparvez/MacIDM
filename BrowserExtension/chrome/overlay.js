@@ -13,24 +13,64 @@
   const host = location.hostname;
   if (DRM.some((d) => host === d || host.endsWith("." + d))) return;
 
-  // ⌥⇧P on Pinterest: download this board or pin. Handled here as well as by the extension command,
-  // because Chrome only binds suggested shortcuts on first install, not when an update adds one.
+  // Pinterest: a "Download board" / "Download pin" button, plus ⌥⇧P. The button doesn't depend on any
+  // shortcut (Chrome only binds suggested shortcuts on first install, and sites can swallow keys).
   if (window === top && /(^|\.)pinterest\.[a-z.]+$/i.test(host)) {
-    document.addEventListener("keydown", (e) => {
-      // e.code, not e.key: Option changes the typed character (⌥⇧P types "∏").
+    const RESERVED = new Set(["", "pin", "search", "ideas", "today", "settings", "business", "explore", "videos", "_",
+      "login", "signup", "about", "help", "news_hub", "categories", "topics", "shopping", "edit", "resource"]);
+    // "pin" for /pin/<id>/, "board" for /<user>/<board>/, null elsewhere (home feed, search…).
+    const pageKind = () => {
+      const parts = location.pathname.split("/").filter(Boolean);
+      if (parts[0] === "pin" && parts[1]) return "pin";
+      if (parts.length >= 2 && !RESERVED.has(parts[0].toLowerCase()) && !parts[0].startsWith("_")) return "board";
+      return null;
+    };
+
+    const pinHost = document.createElement("macidm-pinterest");
+    const pinShadow = pinHost.attachShadow({ mode: "closed" });
+    pinShadow.innerHTML = `<style>
+      button { all: initial; position: fixed; right: 20px; bottom: 20px; z-index: 2147483646; display: none; align-items: center;
+        gap: 8px; padding: 10px 16px; border-radius: 22px; cursor: pointer; background: rgb(22,110,240); color: #fff;
+        font: 600 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; box-shadow: 0 4px 18px rgba(0,0,0,.3); }
+      button:hover { background: rgb(40,125,250); }
+      button.busy { background: rgb(60,60,66); }
+      svg { width: 16px; height: 16px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      kbd { all: initial; font: 500 11px -apple-system, system-ui, sans-serif; color: rgba(255,255,255,.75); margin-left: 2px; }
+    </style>
+    <button title="Download with MacIDM (⌥⇧P)"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span class="label"></span><kbd>⌥⇧P</kbd></button>`;
+    const pinButton = pinShadow.querySelector("button");
+    const pinLabel = pinShadow.querySelector(".label");
+
+    const sendPinterest = () => {
+      if (!pageKind() || pinButton.classList.contains("busy")) return;
+      pinButton.classList.add("busy");
+      pinLabel.textContent = "Opening in MacIDM…";
+      api.runtime.sendMessage({ type: "pinterest", url: location.href })
+        .then((r) => { pinLabel.textContent = r?.ok ? "Opened in MacIDM" : "MacIDM isn't connected"; })
+        .catch(() => { pinLabel.textContent = "MacIDM isn't connected"; })
+        .finally(() => setTimeout(() => { pinButton.classList.remove("busy"); refresh(); }, 2000));
+    };
+
+    // Pinterest changes pages without reloading, so keep the button in step with the URL.
+    let lastPath = null;
+    const refresh = () => {
+      if (pinButton.classList.contains("busy")) return;
+      const kind = pageKind();
+      if (!pinHost.isConnected) document.documentElement.appendChild(pinHost);
+      pinButton.style.display = kind ? "flex" : "none";
+      pinLabel.textContent = kind === "pin" ? "Download pin" : "Download board";
+    };
+    setInterval(() => { if (location.pathname !== lastPath) { lastPath = location.pathname; refresh(); } }, 600);
+    refresh();
+    pinButton.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); sendPinterest(); }, true);
+
+    // On window, in the capture phase: this runs before any of Pinterest's own key handlers.
+    // e.code, not e.key: Option changes the typed character (⌥⇧P types "∏").
+    window.addEventListener("keydown", (e) => {
       if (e.code !== "KeyP" || !e.altKey || !e.shiftKey || e.metaKey || e.ctrlKey || e.repeat) return;
       e.preventDefault();
-      e.stopPropagation();
-      const toast = document.createElement("div");
-      toast.textContent = "Opening in MacIDM…";
-      toast.style.cssText = "position:fixed;z-index:2147483647;left:50%;bottom:28px;transform:translateX(-50%);" +
-        "padding:9px 16px;border-radius:9px;background:rgba(22,110,240,.95);color:#fff;" +
-        "font:600 13px -apple-system,system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.35)";
-      document.documentElement.appendChild(toast);
-      api.runtime.sendMessage({ type: "pinterest", url: location.href }).then((r) => {
-        if (!r?.ok) toast.textContent = "MacIDM isn't connected";
-      }).catch(() => { toast.textContent = "MacIDM isn't connected"; });
-      setTimeout(() => toast.remove(), 2200);
+      e.stopImmediatePropagation();
+      sendPinterest();
     }, true);
   }
 

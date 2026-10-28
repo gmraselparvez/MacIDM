@@ -78,7 +78,7 @@ struct StatusLabel: View {
         case .probing: Text("Connecting…").foregroundStyle(.secondary)
         case .downloading: Text("Downloading")
         case .merging: Text("Merging…")
-        case .paused: Text(item.errorMessage == nil ? "Paused" : "Paused ⚠︎").foregroundStyle(item.errorMessage == nil ? .orange : .red)
+        case .paused: Text(item.errorMessage == nil ? "Paused" : "Paused (error)").foregroundStyle(item.errorMessage == nil ? .orange : .red)
         case .completed: Text("Completed").foregroundStyle(.green)
         case .failed: Text("Failed").foregroundStyle(.red).help(item.errorMessage ?? "")
         case .cancelled: Text("Stopped").foregroundStyle(.secondary)
