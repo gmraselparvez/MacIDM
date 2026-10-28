@@ -6,6 +6,9 @@ import SwiftUI
 @MainActor
 final class WindowPresenter {
     private var windows: [String: NSWindow] = [:]
+    /// Marks windows opened for a request (Pinterest, save dialogs, progress) so a background
+    /// launch doesn't close them along with the main window.
+    static let identifier = NSUserInterfaceItemIdentifier("MacIDM.presented")
     private var cascadePoint = NSPoint.zero
 
     /// Shows the window for `key`, creating it with `content` if needed. `content` gets a closure that closes it.
@@ -21,6 +24,7 @@ final class WindowPresenter {
         let window = NSWindow(contentViewController: controller)
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.title = title
+        window.identifier = WindowPresenter.identifier
         window.isReleasedWhenClosed = false
         if floating { window.level = .floating }
         if windows.isEmpty { window.center(); cascadePoint = NSPoint(x: window.frame.minX, y: window.frame.maxY) }

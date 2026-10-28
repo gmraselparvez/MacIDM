@@ -116,7 +116,9 @@ final class AppState: ObservableObject {
         // Keep browser registrations and the extension copy pointing at this copy of the app.
         if let hostPath { NativeHostInstaller().refreshInstalled(hostPath: hostPath) }
         try? syncExtensionFolder()
-        drainInbox()
+        // Not now: this runs while SwiftUI is still building the app, and opening a window (for a
+        // browser request waiting in the inbox) at this point crashes SwiftUI. Wait until launch is done.
+        DispatchQueue.main.async { [weak self] in self?.drainInbox() }
         pump()
     }
 

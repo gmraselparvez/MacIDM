@@ -79,10 +79,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         if launchedInBackground {
-            DispatchQueue.main.async {
-                for window in NSApp.windows where Self.isAppWindow(window) { window.close() }
-                NSApp.setActivationPolicy(.accessory)
+            // Close just the main window (SwiftUI may create it a moment after launch, so check twice).
+            // Windows opened for the request that woke us, like the Pinterest window, stay open.
+            let closeMain = {
+                for window in NSApp.windows where Self.isAppWindow(window) && window.identifier != WindowPresenter.identifier {
+                    window.close()
+                }
+                self.updateDockIcon()
             }
+            DispatchQueue.main.async(execute: closeMain)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: closeMain)
         } else {
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
