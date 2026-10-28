@@ -58,10 +58,49 @@ struct MacIDMApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Started by the browser helper (--background) or as a login item: stay in the menu bar only.
+    private var launchedInBackground = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        let loginItem = event?.eventID == kAEOpenApplication
+            && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+        launchedInBackground = loginItem || CommandLine.arguments.contains("--background")
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Needed when launched as a bare SwiftPM executable (no .app bundle).
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        // The Dock icon follows the windows: shown while one is open, hidden otherwise (menu bar icon stays).
+        let nc = NotificationCenter.default
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification,
+                     NSWindow.willCloseNotification, NSWindow.didMiniaturizeNotification] {
+            nc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                // After the close/open has finished, so the window list is up to date.
+                DispatchQueue.main.async { self?.updateDockIcon() }
+            }
+        }
+        if launchedInBackground {
+            DispatchQueue.main.async {
+                for window in NSApp.windows where Self.isAppWindow(window) { window.close() }
+                NSApp.setActivationPolicy(.accessory)
+            }
+        } else {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    /// Regular titled windows (main window, download windows, dialogs, Settings) — not the menu bar panel.
+    static func isAppWindow(_ window: NSWindow) -> Bool {
+        window.styleMask.contains(.titled) && !(window is NSPanel)
+            && !String(describing: type(of: window)).contains("StatusBar")
+    }
+
+    private func updateDockIcon() {
+        let hasWindow = NSApp.windows.contains { $0.isVisible && Self.isAppWindow($0) }
+        let wanted: NSApplication.ActivationPolicy = hasWindow ? .regular : .accessory
+        guard NSApp.activationPolicy() != wanted else { return }
+        NSApp.setActivationPolicy(wanted)
+        if wanted == .regular { NSApp.activate(ignoringOtherApps: true) }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false } // keep running in the menu bar

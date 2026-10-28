@@ -38,7 +38,8 @@ func wakeApp() {
     let open = Process()
     open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
     // -g: don't steal focus from the browser. The app drains the inbox on launch.
-    open.arguments = containingApp().map { ["-g", $0.path] } ?? ["-g", "-b", appBundleID]
+    // --background: start in the menu bar only, without the main window or a Dock icon.
+    open.arguments = (containingApp().map { ["-g", $0.path] } ?? ["-g", "-b", appBundleID]) + ["--args", "--background"]
     try? open.run()
     open.waitUntilExit()
 }

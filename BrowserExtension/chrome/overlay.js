@@ -13,6 +13,27 @@
   const host = location.hostname;
   if (DRM.some((d) => host === d || host.endsWith("." + d))) return;
 
+  // ⌥⇧P on Pinterest: download this board or pin. Handled here as well as by the extension command,
+  // because Chrome only binds suggested shortcuts on first install, not when an update adds one.
+  if (window === top && /(^|\.)pinterest\.[a-z.]+$/i.test(host)) {
+    document.addEventListener("keydown", (e) => {
+      // e.code, not e.key: Option changes the typed character (⌥⇧P types "∏").
+      if (e.code !== "KeyP" || !e.altKey || !e.shiftKey || e.metaKey || e.ctrlKey || e.repeat) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const toast = document.createElement("div");
+      toast.textContent = "Opening in MacIDM…";
+      toast.style.cssText = "position:fixed;z-index:2147483647;left:50%;bottom:28px;transform:translateX(-50%);" +
+        "padding:9px 16px;border-radius:9px;background:rgba(22,110,240,.95);color:#fff;" +
+        "font:600 13px -apple-system,system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.35)";
+      document.documentElement.appendChild(toast);
+      api.runtime.sendMessage({ type: "pinterest", url: location.href }).then((r) => {
+        if (!r?.ok) toast.textContent = "MacIDM isn't connected";
+      }).catch(() => { toast.textContent = "MacIDM isn't connected"; });
+      setTimeout(() => toast.remove(), 2200);
+    }, true);
+  }
+
   // Direct media files go straight to the segmented downloader; no menu needed.
   const DIRECT_MEDIA = /\.(mp4|m4v|webm|mov|mkv|mp3|m4a|ogg|wav)(\?|#|$)/i;
 
