@@ -110,9 +110,14 @@ async function openImageGrabber(tabId) {
 api.commands?.onCommand.addListener(async (command, tab) => {
   const target = tab ?? (await api.tabs.query({ active: true, currentWindow: true }))[0];
   if (command === "grab-images" && target?.id !== undefined) openImageGrabber(target.id);
-  // ⌥⇧P on a Pinterest board or pin: hand it to MacIDM's Pinterest window.
-  if (command === "download-pinterest" && /^https?:\/\/([a-z0-9-]+\.)*pinterest\.[a-z.]+\//i.test(target?.url || "")) {
-    sendToHost({ type: "pinterest", url: target.url });
+  // ⌥⇧P when Chrome has bound it (then the page never sees the key): let the page's Pinterest button
+  // handle it, exactly like a click. Fall back to the tab's address if the page script isn't there.
+  if (command === "download-pinterest" && target?.id !== undefined) {
+    try {
+      await api.tabs.sendMessage(target.id, { type: "pinterestShortcut" });
+    } catch {
+      if (/^https?:\/\/([a-z0-9-]+\.)*pinterest\.[a-z.]+\//i.test(target.url || "")) sendToHost({ type: "pinterest", url: target.url });
+    }
   }
 });
 

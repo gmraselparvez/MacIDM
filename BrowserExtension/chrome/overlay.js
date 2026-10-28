@@ -64,6 +64,9 @@
     refresh();
     pinButton.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); sendPinterest(); }, true);
 
+    // Chrome's own ⌥⇧P shortcut (when bound) arrives here from the background script.
+    api.runtime.onMessage.addListener((message) => { if (message?.type === "pinterestShortcut") sendPinterest(); });
+
     // On window, in the capture phase: this runs before any of Pinterest's own key handlers.
     // e.code, not e.key: Option changes the typed character (⌥⇧P types "∏").
     window.addEventListener("keydown", (e) => {
