@@ -4,6 +4,7 @@ public enum Category: String, Codable, CaseIterable, Identifiable, Sendable {
     case video = "Video"
     case music = "Music"
     case documents = "Documents"
+    case images = "Images"
     case archives = "Archives"
     case programs = "Programs"
     case other = "Other"
@@ -15,6 +16,7 @@ public enum Category: String, Codable, CaseIterable, Identifiable, Sendable {
         case .video: return "film"
         case .music: return "music.note"
         case .documents: return "doc.text"
+        case .images: return "photo"
         case .archives: return "archivebox"
         case .programs: return "app.badge"
         case .other: return "folder"
@@ -25,7 +27,8 @@ public enum Category: String, Codable, CaseIterable, Identifiable, Sendable {
         .video: ["mp4", "mkv", "mov", "avi", "webm", "m4v", "flv", "wmv", "mpg", "mpeg", "3gp", "ts"],
         .music: ["mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "wma", "aiff", "alac"],
         .documents: ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "epub", "csv",
-                     "pages", "numbers", "key", "odt", "md", "jpg", "jpeg", "png", "gif", "webp", "heic", "svg"],
+                     "pages", "numbers", "key", "odt", "md"],
+        .images: ["jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "svg", "avif", "bmp", "tif", "tiff"],
         .archives: ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "iso", "img"],
         .programs: ["dmg", "pkg", "app", "exe", "msi", "deb", "rpm", "apk", "appimage", "jar"],
     ]

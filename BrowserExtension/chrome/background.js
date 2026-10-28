@@ -73,16 +73,57 @@ const sayHello = () => sendToHost({ type: "hello", version: api.runtime.getManif
 api.runtime.onStartup.addListener(sayHello);
 
 // Context menu: links and media elements.
-api.runtime.onInstalled.addListener(() => {
+api.runtime.onInstalled.addListener(async () => {
   sayHello();
+  await api.contextMenus.removeAll(); // reloads keep old entries around
   api.contextMenus.create({
     id: "macidm-download",
     title: "Download with MacIDM",
     contexts: ["link", "video", "audio", "image"],
   });
+  api.contextMenus.create({ id: "macidm-images", title: "Grab images from this page…", contexts: ["page", "image"] });
+  api.contextMenus.create({
+    id: "macidm-pinterest",
+    title: "Download this Pinterest board/pin with MacIDM",
+    contexts: ["page", "link", "image"],
+    documentUrlPatterns: ["*://*.pinterest.com/*", "*://*.pinterest.co.uk/*", "*://*.pinterest.ca/*", "*://*.pinterest.de/*",
+      "*://*.pinterest.fr/*", "*://*.pinterest.com.au/*", "*://*.pinterest.jp/*", "*://*.pinterest.es/*", "*://*.pinterest.it/*"],
+  });
+});
+
+/// Opens the image grabber in a tab, injecting it first into tabs that were open before the extension.
+async function openImageGrabber(tabId) {
+  try {
+    await api.tabs.sendMessage(tabId, { type: "openImageGrabber" });
+    return { ok: true };
+  } catch {
+    try {
+      await api.scripting.executeScript({ target: { tabId }, files: ["grabber.js"] });
+      await api.tabs.sendMessage(tabId, { type: "openImageGrabber" });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  }
+}
+
+api.commands?.onCommand.addListener(async (command, tab) => {
+  if (command !== "grab-images") return;
+  const target = tab ?? (await api.tabs.query({ active: true, currentWindow: true }))[0];
+  if (target?.id !== undefined) openImageGrabber(target.id);
 });
 
 api.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === "macidm-images") {
+    if (tab?.id !== undefined) openImageGrabber(tab.id);
+    return;
+  }
+  if (info.menuItemId === "macidm-pinterest") {
+    // A pin link or the page itself (board or pin).
+    const link = info.linkUrl && /\/pin\/|pinterest\./.test(info.linkUrl) ? info.linkUrl : info.pageUrl;
+    sendToHost({ type: "pinterest", url: link });
+    return;
+  }
   // On an image/video inside a link, the media file is what the user means, not the link target.
   const url = info.mediaType ? info.srcUrl || info.linkUrl : info.linkUrl || info.srcUrl;
   if (!url) return;
@@ -146,6 +187,19 @@ api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       ? sendDownload({ url: message.src, referrer: message.pageUrl, incognito })
       : sendMedia({ url: message.pageUrl, title: message.title, incognito, choice: message.choice });
     sent.then(sendResponse);
+    return true;
+  }
+  if (message?.type === "openImageGrabberInTab") {
+    openImageGrabber(message.tabId).then(sendResponse);
+    return true;
+  }
+  // Images picked in the grabber.
+  if (message?.type === "downloadBatch") {
+    sendToHost({ type: "batch", url: message.pageUrl, urls: message.urls, referrer: message.pageUrl }).then(sendResponse);
+    return true;
+  }
+  if (message?.type === "pinterest") {
+    sendToHost({ type: "pinterest", url: message.url }).then(sendResponse);
     return true;
   }
   // Qualities for the on-page menu; MacIDM's helper asks yt-dlp.

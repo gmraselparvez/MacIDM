@@ -120,6 +120,19 @@ final class AppState: ObservableObject {
             guard let (url, headers, fileName) = request.validated() else { continue }
             if request.type == "formats", let id = request.requestID {
                 answerFormats(url: url, headers: headers, requestID: id)
+            } else if request.type == "pinterest" {
+                showPinterest(url: url.absoluteString)
+            } else if request.type == "batch" {
+                let files = request.batchURLs
+                guard !files.isEmpty else { continue }
+                if defaults.bool(forKey: SettingsKey.askBeforeDownload) {
+                    windows.show(key: "batch-\(UUID().uuidString)", title: "Download Files", floating: true) { close in
+                        ConfirmBatchView(urls: files, pageURL: url, close: close).environmentObject(self)
+                    }
+                } else {
+                    addFiles(files, folder: Self.categoryFolder(.images).appendingPathComponent(FileNaming.sanitize(url.host ?? "web")),
+                             referrer: url, startNow: true)
+                }
             } else if request.isMedia, let code = request.choice, let choice = MediaChoice(code: code) {
                 // Picked from the quality menu on the page.
                 let title = fileName.isEmpty ? url.absoluteString : fileName
@@ -386,6 +399,56 @@ final class AppState: ObservableObject {
         scheduleSave(immediate: true)
         pump()
         return item.id
+    }
+
+    /// The Pinterest window as its own window (from the browser), fetching right away.
+    func showPinterest(url: String = "") {
+        windows.show(key: "pinterest-\(url)", title: "Download from Pinterest") { close in
+            PinterestView(initialURL: url, autoFetch: !url.isEmpty, onClose: close).environmentObject(self)
+        }
+    }
+
+    /// Queues the images and/or videos of a pin or board. Videos with a direct MP4 use the segmented
+    /// engine; streaming-only ones go to the video grabber.
+    func addPinterest(_ collection: PinterestService.Collection, images: Bool, videos: Bool, folder: URL, startNow: Bool) {
+        let segments = defaults.integer(forKey: SettingsKey.segments)
+        var new: [DownloadItem] = []
+        let referer = ["Referer": "https://www.pinterest.com/"]
+        for pin in collection.pins {
+            if pin.isVideo {
+                guard videos else { continue }
+                if let mp4 = pin.videoURL {
+                    var item = DownloadItem(url: mp4, fileName: PinterestService.fileName(for: pin, url: mp4),
+                                            destinationDir: folder, requestedSegments: segments)
+                    item.headers = referer
+                    item.category = .video
+                    new.append(item)
+                } else {
+                    var item = DownloadItem(url: pin.pageURL, fileName: pin.title.isEmpty ? "pin-\(pin.id)" : pin.title,
+                                            destinationDir: folder)
+                    item.media = MediaRequest(choice: .best, title: pin.title.isEmpty ? "pin-\(pin.id)" : pin.title)
+                    item.category = .video
+                    new.append(item)
+                }
+            } else if images, let image = pin.imageURL {
+                var item = DownloadItem(url: image, fileName: PinterestService.fileName(for: pin, url: image),
+                                        destinationDir: folder, requestedSegments: segments)
+                item.headers = referer
+                item.category = .images
+                new.append(item)
+            }
+        }
+        add(items: new, startNow: startNow)
+    }
+
+    /// Queues plain files picked in the browser (e.g. images from the image grabber).
+    func addFiles(_ urls: [URL], folder: URL, referrer: URL?, startNow: Bool) {
+        let segments = defaults.integer(forKey: SettingsKey.segments)
+        add(items: urls.map { url in
+            var item = DownloadItem(url: url, destinationDir: folder, requestedSegments: segments)
+            if let referrer { item.headers = ["Referer": referrer.absoluteString] }
+            return item
+        }, startNow: startNow)
     }
 
     /// Adds many links at once. `startNow: false` leaves them queued for the scheduler.

@@ -127,6 +127,7 @@ struct MainWindow: View {
     private func handle(_ command: DownloadCommand) {
         switch command {
         case .batch: showingBatch = true
+        case .pinterest: state.showPinterest()
         case .importList: importList()
         case .exportList: exportList()
         case .resume: state.resume(selection)

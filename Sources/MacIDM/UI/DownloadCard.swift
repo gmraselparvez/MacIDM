@@ -8,6 +8,7 @@ extension MacIDMCore.Category {
         case .video: return Color(red: 0.55, green: 0.36, blue: 0.96)
         case .music: return Color(red: 0.95, green: 0.32, blue: 0.52)
         case .documents: return Color(red: 0.20, green: 0.55, blue: 0.98)
+        case .images: return Color(red: 0.16, green: 0.72, blue: 0.80)
         case .archives: return Color(red: 0.98, green: 0.60, blue: 0.20)
         case .programs: return Color(red: 0.24, green: 0.74, blue: 0.45)
         case .other: return Color(red: 0.55, green: 0.58, blue: 0.64)

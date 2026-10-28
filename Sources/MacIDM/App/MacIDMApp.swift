@@ -20,6 +20,8 @@ struct MacIDMApp: App {
                     .keyboardShortcut("n", modifiers: [.command, .shift])
                 Button("Batch Download…") { DownloadCommand.batch.post() }
                     .keyboardShortcut("n", modifiers: [.command, .option])
+                Button("Download from Pinterest…") { DownloadCommand.pinterest.post() }
+                    .keyboardShortcut("p", modifiers: [.command, .option])
                 Divider()
                 Button("Import List…") { DownloadCommand.importList.post() }
                     .keyboardShortcut("o")
@@ -66,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 /// Menu commands that act on the main window's selection.
 enum DownloadCommand: String {
-    case batch, importList, exportList, resume, pause, stop, startNow, resumeAll, pauseAll, open, reveal
+    case batch, pinterest, importList, exportList, resume, pause, stop, startNow, resumeAll, pauseAll, open, reveal
 
     func post() { NotificationCenter.default.post(name: .downloadCommand, object: rawValue) }
 }

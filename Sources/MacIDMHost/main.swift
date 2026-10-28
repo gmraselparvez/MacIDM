@@ -89,7 +89,7 @@ while let header = readExactly(4), let length = NativeMessaging.length(of: heade
     case "hello":
         try? ExtensionHeartbeat().record(callingBrowser())
         reply(["ok": true, "version": "0.4.0"])
-    case "download", "media":
+    case "download", "media", "batch", "pinterest":
         guard let request = try? JSONDecoder().decode(BrowserRequest.self, from: body), request.validated() != nil else {
             reply(["ok": false, "error": "invalid download request"])
             continue

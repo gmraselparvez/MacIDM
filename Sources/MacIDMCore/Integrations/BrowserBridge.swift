@@ -13,6 +13,8 @@ public struct BrowserRequest: Codable, Equatable, Sendable {
     public var choice: String?
     /// For "formats": the helper waits for the app's answer under this id.
     public var requestID: String?
+    /// For "batch": many files (e.g. images picked on a page); `url` is the page they came from.
+    public var urls: [String]?
 
     public init(url: String, referrer: String? = nil, cookies: String? = nil, userAgent: String? = nil, fileName: String? = nil) {
         self.type = "download"
@@ -26,9 +28,19 @@ public struct BrowserRequest: Codable, Equatable, Sendable {
     /// A video page (YouTube etc.) for the video grabber rather than a direct file.
     public var isMedia: Bool { type == "media" }
 
+    /// For "batch": the http(s) links, de-duplicated, at most 5,000.
+    public var batchURLs: [URL] {
+        var seen = Set<String>()
+        return (urls ?? []).compactMap { s -> URL? in
+            guard seen.insert(s).inserted, let u = URL(string: s), ["http", "https"].contains(u.scheme?.lowercased() ?? ""),
+                  u.host != nil else { return nil }
+            return u
+        }.prefix(5_000).map { $0 }
+    }
+
     /// Validates the request and turns it into extra HTTP headers. Returns nil for anything unsafe.
     public func validated() -> (url: URL, headers: [String: String], fileName: String)? {
-        guard type == "download" || type == "media" || type == "formats", let url = URL(string: url),
+        guard ["download", "media", "formats", "batch", "pinterest"].contains(type), let url = URL(string: url),
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https", url.host != nil else { return nil }
         var headers: [String: String] = [:]
         func add(_ name: String, _ value: String?) {
