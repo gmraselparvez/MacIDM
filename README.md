@@ -50,7 +50,7 @@ Parallel segmented downloads, reliable resume, browser integration and a one-cli
 ## Install
 
 1. Download **`MacIDM-<version>.dmg`** from the [latest release](https://github.com/gmraselparvez/MacIDM/releases/latest).
-2. Open it and drag **MacIDM** into **Applications**.
+2. Open it and drag **MacIDM** into **Applications**. The disk image also holds the **MacIDM Browser Extension** folder and **How to Install.txt**. The extension is also attached to each release on its own as `MacIDM-Extension-<version>.zip`.
 3. The first time, **right-click MacIDM › Open**, then click **Open**. MacIDM isn't notarized by Apple yet, so macOS asks once. If macOS says it "can't be opened", go to **System Settings › Privacy & Security** and click **Open Anyway**.
 
 Requires macOS 13 Ventura or later on an Apple silicon Mac.
@@ -64,6 +64,22 @@ Requires macOS 13 Ventura or later on an Apple silicon Mac.
 1. In MacIDM, open **Settings › Browser** and click **Set Up** next to your browser.
 2. MacIDM opens the browser's Extensions page and copies the extension folder path. Turn on **Developer mode**, click **Load unpacked**, press **⇧⌘G**, paste, and choose **Select**.
 3. The row turns **Ready**. Videos now show **Download this video**, and links get **Download with MacIDM** in the right-click menu.
+
+### Give MacIDM permission
+
+macOS asks for these once. You can change any of them later in **System Settings**.
+
+**1. Open the app the first time (Gatekeeper).** If macOS says MacIDM "can't be opened" or "Not Opened", open **System Settings › Privacy & Security**, scroll down to **Security**, and click **Open Anyway** next to "MacIDM was blocked". Confirm with your password or Touch ID.
+
+**2. Let MacIDM read your browser's tab (Automation).** The first time you use the Pinterest shortcut (⌥⇧P) from outside the browser, macOS asks "MacIDM wants to control Google Chrome" (or Brave, Edge, Safari). Click **Allow**. MacIDM only asks the browser for the address of the tab you're on.
+
+If you clicked Don't Allow, open **System Settings › Privacy & Security › Automation**, click the arrow next to **MacIDM.app**, and turn on your browser:
+
+![Privacy & Security › Automation with MacIDM.app allowed to control Google Chrome](docs/screenshots/permission-automation.png)
+
+**3. Notifications (optional).** To be told when downloads finish, allow MacIDM in **System Settings › Notifications › MacIDM**.
+
+**4. Open at login (optional).** **MacIDM › Settings › General › Startup**.
 
 ## Features
 
