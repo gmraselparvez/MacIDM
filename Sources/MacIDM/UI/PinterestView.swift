@@ -9,6 +9,8 @@ struct PinterestView: View {
 
     let onClose: (() -> Void)?
     let autoFetch: Bool
+    /// Cookies and user agent from the browser, when opened from there.
+    let browserHeaders: [String: String]
     @State private var urlString: String
     @State private var collection: PinterestService.Collection?
     @State private var loading = false
@@ -17,9 +19,10 @@ struct PinterestView: View {
     @State private var includeVideos = true
     @State private var folder: URL?
 
-    init(initialURL: String = "", autoFetch: Bool = false, onClose: (() -> Void)? = nil) {
+    init(initialURL: String = "", autoFetch: Bool = false, browserHeaders: [String: String] = [:], onClose: (() -> Void)? = nil) {
         _urlString = State(initialValue: initialURL)
         self.autoFetch = autoFetch
+        self.browserHeaders = browserHeaders
         self.onClose = onClose
     }
 
@@ -106,7 +109,11 @@ struct PinterestView: View {
         collection = nil
         Task {
             do {
-                collection = try await PinterestService(userAgent: AppState.currentConfig().userAgent).fetch(url)
+                // Signed in (cookies from the browser) when we have them: Pinterest shows signed-out
+                // visitors only part of a board. Keep the browser's user agent with its cookies.
+                let service = PinterestService(userAgent: browserHeaders["User-Agent"] ?? AppState.currentConfig().userAgent,
+                                               cookie: browserHeaders["Cookie"])
+                collection = try await service.fetch(url)
             } catch {
                 self.error = error.localizedDescription
             }

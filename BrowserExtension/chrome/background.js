@@ -65,6 +65,12 @@ async function sendMedia({ url, title, incognito, choice }) {
   });
 }
 
+/// Pinterest board or pin → MacIDM's Pinterest window. Your Pinterest cookies go along because Pinterest
+/// shows signed-out visitors only part of a board; MacIDM uses them for its Pinterest requests only.
+async function sendPinterest(url, incognito) {
+  return sendToHost({ type: "pinterest", url, cookies: await cookieHeader(url, incognito), userAgent: navigator.userAgent });
+}
+
 // Direct media files can use the fast segmented downloader; anything else (blob:, streams) needs yt-dlp.
 const DIRECT_MEDIA = /\.(mp4|m4v|webm|mov|mkv|mp3|m4a|ogg|wav)(\?|#|$)/i;
 
@@ -116,7 +122,7 @@ api.commands?.onCommand.addListener(async (command, tab) => {
     try {
       await api.tabs.sendMessage(target.id, { type: "pinterestShortcut" });
     } catch {
-      if (/^https?:\/\/([a-z0-9-]+\.)*pinterest\.[a-z.]+\//i.test(target.url || "")) sendToHost({ type: "pinterest", url: target.url });
+      if (/^https?:\/\/([a-z0-9-]+\.)*pinterest\.[a-z.]+\//i.test(target.url || "")) sendPinterest(target.url, target.incognito);
     }
   }
 });
@@ -129,7 +135,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "macidm-pinterest") {
     // A pin link or the page itself (board or pin).
     const link = info.linkUrl && /\/pin\/|pinterest\./.test(info.linkUrl) ? info.linkUrl : info.pageUrl;
-    sendToHost({ type: "pinterest", url: link });
+    sendPinterest(link, tab?.incognito);
     return;
   }
   // On an image/video inside a link, the media file is what the user means, not the link target.
@@ -207,7 +213,7 @@ api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === "pinterest") {
-    sendToHost({ type: "pinterest", url: message.url }).then(sendResponse);
+    sendPinterest(message.url, _sender.tab?.incognito).then(sendResponse);
     return true;
   }
   // Qualities for the on-page menu; MacIDM's helper asks yt-dlp.

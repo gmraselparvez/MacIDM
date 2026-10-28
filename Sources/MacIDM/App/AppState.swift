@@ -129,7 +129,7 @@ final class AppState: ObservableObject {
             if request.type == "formats", let id = request.requestID {
                 answerFormats(url: url, headers: headers, requestID: id)
             } else if request.type == "pinterest" {
-                showPinterest(url: url.absoluteString)
+                showPinterest(url: url.absoluteString, browserHeaders: headers)
             } else if request.type == "batch" {
                 let files = request.batchURLs
                 guard !files.isEmpty else { continue }
@@ -458,9 +458,11 @@ final class AppState: ObservableObject {
     }
 
     /// The Pinterest window as its own window (from the browser), fetching right away.
-    func showPinterest(url: String = "") {
+    /// `browserHeaders` (cookies, user agent) come with requests from the extension; kept only for this window.
+    func showPinterest(url: String = "", browserHeaders: [String: String] = [:]) {
         windows.show(key: "pinterest-\(url)", title: "Download from Pinterest") { close in
-            PinterestView(initialURL: url, autoFetch: !url.isEmpty, onClose: close).environmentObject(self)
+            PinterestView(initialURL: url, autoFetch: !url.isEmpty, browserHeaders: browserHeaders, onClose: close)
+                .environmentObject(self)
         }
     }
 

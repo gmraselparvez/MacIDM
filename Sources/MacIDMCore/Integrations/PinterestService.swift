@@ -32,6 +32,9 @@ public struct PinterestService: Sendable {
 
     public let session: URLSession
     public let userAgent: String
+    /// Your Pinterest cookies from the browser, when the request came from there. Signed out,
+    /// Pinterest only shows part of a board; signed in it returns all of it.
+    public var cookie: String?
     /// Boards can be huge; stop after this many pins.
     public var maxPins = 2_000
 
@@ -46,9 +49,11 @@ public struct PinterestService: Sendable {
         return URLSession(configuration: config)
     }()
 
-    public init(session: URLSession = PinterestService.freshSession, userAgent: String = EngineConfig.safariUserAgent) {
+    public init(session: URLSession = PinterestService.freshSession, userAgent: String = EngineConfig.safariUserAgent,
+                cookie: String? = nil) {
         self.session = session
         self.userAgent = userAgent
+        self.cookie = cookie
     }
 
     // MARK: - Links
@@ -148,6 +153,7 @@ public struct PinterestService: Sendable {
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(handler, forHTTPHeaderField: "X-Pinterest-PWS-Handler")
+        if let cookie, !cookie.isEmpty { request.setValue(cookie, forHTTPHeaderField: "Cookie") }
         var lastError: Error = MediaError.failed("Pinterest didn't respond.")
         for attempt in 0..<3 {
             do {
