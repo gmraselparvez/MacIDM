@@ -25,10 +25,7 @@ struct PinterestView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                Image(systemName: "pin.fill").font(.title2).foregroundStyle(.red)
-                Text("Download from Pinterest").font(.title2.bold())
-            }
+            Text("Download from Pinterest").font(.title2.bold())
             HStack {
                 TextField("Pin, board or pin.it link", text: $urlString,
                           prompt: Text("https://www.pinterest.com/username/board-name/"))
