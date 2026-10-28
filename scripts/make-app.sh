@@ -45,6 +45,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSAppleEventsUsageDescription</key><string>MacIDM reads your browser's current tab so the Pinterest shortcut can download the board or pin you're viewing.</string>
 </dict></plist>
 PLIST
 find "$APP" -name "._*" -delete

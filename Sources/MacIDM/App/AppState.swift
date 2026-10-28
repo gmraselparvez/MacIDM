@@ -20,6 +20,7 @@ enum SettingsKey {
     static let notifications = "notifications"
     static let askBeforeDownload = "askBeforeDownload"
     static let showProgressWindow = "showProgressWindow"
+    static let shortcutPinterest = "shortcutPinterest"
 }
 
 @MainActor
@@ -38,6 +39,9 @@ final class AppState: ObservableObject {
     private let network = NetworkMonitor()
     private let notifier = Notifier()
     let windows = WindowPresenter()
+    private let shortcuts = GlobalShortcuts()
+    /// False when another app already uses the Pinterest shortcut.
+    @Published private(set) var pinterestShortcutRegistered = true
     private var scheduleTimer: Timer?
     private var lastScheduleCheck = Date()
     /// Queued items the user explicitly started; they ignore the schedule.
@@ -106,6 +110,8 @@ final class AppState: ObservableObject {
             mediaTools = MediaTools.locate()
         }
         applySettings()
+        registerShortcuts()
+        BrowserTab.startTracking()
         loadYtdlpVersion()
         // Keep browser registrations and the extension copy pointing at this copy of the app.
         if let hostPath { NativeHostInstaller().refreshInstalled(hostPath: hostPath) }
@@ -262,6 +268,54 @@ final class AppState: ObservableObject {
             updatingYtdlp = false
             refreshMediaTools()
         }
+    }
+
+    // MARK: - Global shortcuts
+
+    /// The saved Pinterest shortcut; nil when turned off. Defaults to ⌥⇧P.
+    var pinterestShortcut: KeyCombo? {
+        get {
+            guard let data = defaults.data(forKey: SettingsKey.shortcutPinterest) else { return .pinterestDefault }
+            return (try? JSONDecoder().decode(KeyCombo?.self, from: data)) ?? .pinterestDefault
+        }
+        set {
+            defaults.set(try? JSONEncoder().encode(newValue), forKey: SettingsKey.shortcutPinterest)
+            registerShortcuts()
+            objectWillChange.send()
+        }
+    }
+
+    private func registerShortcuts() {
+        pinterestShortcutRegistered = shortcuts.register(id: 1, combo: pinterestShortcut) { [weak self] in
+            self?.pinterestFromBrowser()
+        }
+    }
+
+    /// The Pinterest shortcut: open the board or pin showing in the browser.
+    func pinterestFromBrowser() {
+        switch BrowserTab.currentURL() {
+        case .success(let url) where PinterestService.isPinterest(url) && PinterestService.target(for: url) != nil:
+            showPinterest(url: url.absoluteString)
+        case .success:
+            explain("Open a Pinterest board or pin first",
+                    "The shortcut downloads the Pinterest board or pin showing in your browser's current tab.")
+        case .failure(.notAllowed(let browser)):
+            explain("Allow MacIDM to read \(browser)'s current tab",
+                    "Open System Settings › Privacy & Security › Automation, and turn on \(browser) under MacIDM.",
+                    settingsURL: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"))
+        case .failure:
+            explain("No browser window found", "Open a Pinterest board or pin in Chrome, Edge, Brave or Safari, then press the shortcut.")
+        }
+    }
+
+    private func explain(_ title: String, _ message: String, settingsURL: URL? = nil) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        if settingsURL != nil { alert.addButton(withTitle: "Open System Settings") }
+        if alert.runModal() == .alertSecondButtonReturn, let settingsURL { NSWorkspace.shared.open(settingsURL) }
     }
 
     // MARK: - Open at login

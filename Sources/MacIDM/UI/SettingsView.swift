@@ -45,6 +45,19 @@ private struct GeneralSettings: View {
                     .font(.caption).foregroundStyle(.secondary)
                 if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
             }
+            Section("Shortcuts") {
+                LabeledContent("Download Pinterest board or pin") {
+                    ShortcutRecorder(combo: Binding(get: { state.pinterestShortcut }, set: { state.pinterestShortcut = $0 }),
+                                     defaultCombo: .pinterestDefault)
+                }
+                if !state.pinterestShortcutRegistered {
+                    Text("Another app already uses this shortcut. Pick a different one.")
+                        .font(.caption).foregroundStyle(.red)
+                }
+                Text("Works from any app: press it while a Pinterest board or pin is open in Chrome, Edge, Brave or Safari. The first time, macOS asks to let MacIDM read the browser's current tab.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Section("Downloads") {
                 LabeledContent("Download folder") {
                     HStack {
@@ -205,5 +218,53 @@ struct SpeedField: View {
     private func save() {
         let kb = Int((max(amount, 0.01) * unit.factor).rounded())
         if kb != kilobytesPerSecond { kilobytesPerSecond = max(1, kb) }
+    }
+}
+
+/// Click, then press a key combination. Esc cancels; the x clears it; the arrow restores the default.
+struct ShortcutRecorder: View {
+    @Binding var combo: KeyCombo?
+    let defaultCombo: KeyCombo
+    @State private var recording = false
+    @State private var monitor: Any?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: toggle) {
+                Text(recording ? "Press keys…" : (combo?.label ?? "None"))
+                    .monospacedDigit()
+                    .frame(minWidth: 90)
+                    .foregroundStyle(recording ? Color.accentColor : Color.primary)
+            }
+            .help("Click, then press the new shortcut (Esc cancels)")
+            if combo != nil {
+                Button { combo = nil } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.borderless).foregroundStyle(.secondary).help("Turn off")
+            }
+            if combo != defaultCombo {
+                Button { combo = defaultCombo } label: { Image(systemName: "arrow.counterclockwise") }
+                    .buttonStyle(.borderless).foregroundStyle(.secondary).help("Back to \(defaultCombo.label)")
+            }
+        }
+        .onDisappear(perform: stop)
+    }
+
+    private func toggle() { recording ? stop() : start() }
+
+    private func start() {
+        recording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 { stop(); return nil } // Esc
+            guard let new = KeyCombo(event: event) else { NSSound.beep(); return nil }
+            combo = new
+            stop()
+            return nil
+        }
+    }
+
+    private func stop() {
+        recording = false
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
     }
 }
