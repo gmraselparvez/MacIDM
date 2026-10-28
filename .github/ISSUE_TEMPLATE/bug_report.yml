@@ -1,0 +1,39 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: Link (if a download failed)
+      description: The page or file link, if you're comfortable sharing it.
+  - type: input
+    id: version
+    attributes:
+      label: MacIDM version
+      description: MacIDM › About MacIDM
+      placeholder: "0.6.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "macOS 15.1"
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser (if it's about the extension)
+      options: [Not browser related, Google Chrome, Microsoft Edge, Brave, Chromium]
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag screenshots here if they help.

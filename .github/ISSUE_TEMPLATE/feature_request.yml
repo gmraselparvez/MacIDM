@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an improvement or a new feature
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe the feature and how you'd use it.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is it useful?
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Mockups or screenshots
+      description: Optional. A sketch or a screenshot of a similar app helps.
