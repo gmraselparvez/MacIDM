@@ -35,7 +35,18 @@ public struct PinterestService: Sendable {
     /// Boards can be huge; stop after this many pins.
     public var maxPins = 2_000
 
-    public init(session: URLSession = .shared, userAgent: String = EngineConfig.safariUserAgent) {
+    /// Pinterest answers change all the time, and a cached page (or old cookies) can cut a board short,
+    /// so these requests use their own session with no cache and no cookies.
+    public static let freshSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        return URLSession(configuration: config)
+    }()
+
+    public init(session: URLSession = PinterestService.freshSession, userAgent: String = EngineConfig.safariUserAgent) {
         self.session = session
         self.userAgent = userAgent
     }
@@ -95,15 +106,21 @@ public struct PinterestService: Sendable {
                 throw MediaError.failed("Pinterest didn't return that board. Is it private?")
             }
             let title = info["name"] as? String ?? slug
+            let expected = info["pin_count"] as? Int
             var pins: [Pin] = []
+            var seen = Set<String>()
             var bookmark: String?
-            repeat {
+            var retried = false
+            while pins.count < maxPins {
                 var options: [String: Any] = ["board_id": boardID, "page_size": 50, "field_set_key": "react_grid_pin"]
                 if let bookmark { options["bookmarks"] = [bookmark] }
                 let (page, next) = try await resourcePage("BoardFeedResource", options: options, handler: "www/[username]/[slug].js")
-                pins += Self.pins(fromFeed: page)
-                bookmark = next
-            } while bookmark != nil && pins.count < maxPins
+                for pin in Self.pins(fromFeed: page) where seen.insert(pin.id).inserted { pins.append(pin) }
+                if let next { bookmark = next; continue }
+                // Pinterest sometimes ends a feed early; if the board says it has more, ask for that page again once.
+                if !retried, let expected, pins.count < expected { retried = true; continue }
+                break
+            }
             return Collection(title: title, pins: Array(pins.prefix(maxPins)), isBoard: true)
         case .shortLink:
             throw MediaError.failed("Couldn't open that pin.it link.")
@@ -127,7 +144,7 @@ public struct PinterestService: Sendable {
         var components = URLComponents(string: "https://www.pinterest.com/resource/\(name)/get/")!
         components.queryItems = [URLQueryItem(name: "source_url", value: "/"),
                                  URLQueryItem(name: "data", value: String(decoding: payload, as: UTF8.self))]
-        var request = URLRequest(url: components.url!, timeoutInterval: 20)
+        var request = URLRequest(url: components.url!, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 20)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(handler, forHTTPHeaderField: "X-Pinterest-PWS-Handler")
