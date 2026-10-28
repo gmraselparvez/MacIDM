@@ -48,7 +48,10 @@ public actor DownloadEngine {
         guard running[item.id] == nil else { return }
         let id = item.id
         if item.media != nil {
-            let downloader = MediaDownloader(item: item, config: config, onUpdate: onUpdate)
+            let perItem = itemLimiter(id)
+            if let cap = item.speedLimit, cap > 0 { Task { await perItem.setLimit(cap) } }
+            let downloader = MediaDownloader(item: item, config: config, session: session, limiter: limiter,
+                                             itemLimiter: perItem, onUpdate: onUpdate)
             running[id] = Task {
                 let result = await downloader.run()
                 self.finished(id)

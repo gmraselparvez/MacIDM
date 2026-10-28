@@ -445,3 +445,69 @@ public struct FormatsResponse: Codable, Equatable, Sendable {
         }
     }
 }
+
+/// The stream files yt-dlp picked for a choice, when they're plain HTTP files MacIDM can fetch
+/// itself with parallel connections (far faster than yt-dlp's single connection on YouTube).
+public struct ResolvedMedia: Equatable, Sendable {
+    public struct Stream: Equatable, Sendable {
+        public var url: URL
+        public var headers: [String: String]
+        public var ext: String
+        public var size: Int64?
+        public var hasVideo: Bool
+        public var hasAudio: Bool
+    }
+
+    public var id: String
+    public var title: String
+    /// Video first, then audio, as yt-dlp lists them.
+    public var streams: [Stream]
+
+    /// nil when any picked stream isn't a plain HTTP(S) file (HLS, DASH manifests, live…).
+    public static func parse(_ data: Data) -> ResolvedMedia? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let formats = (json["requested_formats"] as? [[String: Any]]) ?? [json]
+        var streams: [Stream] = []
+        for f in formats {
+            guard let proto = f["protocol"] as? String, proto == "https" || proto == "http",
+                  let s = f["url"] as? String, let url = URL(string: s) else { return nil }
+            let size = (f["filesize"] as? NSNumber)?.int64Value ?? (f["filesize_approx"] as? NSNumber)?.int64Value
+            streams.append(Stream(url: url, headers: f["http_headers"] as? [String: String] ?? [:],
+                                  ext: f["ext"] as? String ?? "bin", size: size,
+                                  hasVideo: (f["vcodec"] as? String ?? "none") != "none",
+                                  hasAudio: (f["acodec"] as? String ?? "none") != "none"))
+        }
+        guard !streams.isEmpty, streams.count <= 2 else { return nil }
+        return ResolvedMedia(id: json["id"] as? String ?? "", title: json["title"] as? String ?? "video", streams: streams)
+    }
+}
+
+extension YTDLPService {
+    /// Asks yt-dlp which streams it would download for `choice`, without downloading them.
+    public static func resolveStreams(url: URL, choice: MediaChoice, ytdlp: URL, headers: [String: String] = [:],
+                                      jsRuntime: URL? = nil) async throws -> ResolvedMedia? {
+        var args = ["-J", "--no-playlist", "--no-warnings", "-f", choice.formatSelector]
+        if !choice.isAudio { args += ["-S", "res,vcodec:h264,acodec:m4a"] }
+        args += jsRuntimeArguments(jsRuntime) + headerArguments(headers) + ["--", url.absoluteString]
+        let result = try await ProcessRunner.run(ytdlp, args)
+        guard result.status == 0 else { throw MediaError.classify(stderr: result.stderr) }
+        return ResolvedMedia.parse(Data(result.stdout.utf8))
+    }
+
+    /// ffmpeg arguments to turn downloaded streams into the final file.
+    public static func ffmpegArguments(inputs: [URL], choice: MediaChoice, output: URL) -> [String] {
+        var args = ["-y", "-hide_banner", "-loglevel", "error"]
+        for input in inputs { args += ["-i", input.path] }
+        switch choice {
+        case .audio(.mp3):
+            args += ["-vn", "-c:a", "libmp3lame", "-q:a", "2"]
+        case .audio(.m4a):
+            args += ["-vn", "-c:a", inputs.first?.pathExtension.lowercased() == "m4a" ? "copy" : "aac", "-b:a", "192k"]
+        case .best, .video:
+            if inputs.count == 2 { args += ["-map", "0:v:0", "-map", "1:a:0"] }
+            args += ["-c", "copy"]
+            if output.pathExtension.lowercased() == "mp4" { args += ["-movflags", "+faststart"] }
+        }
+        return args + [output.path]
+    }
+}

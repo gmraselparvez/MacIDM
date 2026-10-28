@@ -23,6 +23,9 @@ final class MockServer: URLProtocol, @unchecked Sendable {
     static func register(_ host: String, _ config: Config) {
         lock.lock(); configs[host] = config; requestCounts[host] = 0; lock.unlock()
     }
+    static func requestCount(_ host: String) -> Int {
+        lock.lock(); defer { lock.unlock() }; return requestCounts[host] ?? 0
+    }
     static func update(_ host: String, _ change: (inout Config) -> Void) {
         lock.lock(); change(&configs[host]!); lock.unlock()
     }

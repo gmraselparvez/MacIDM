@@ -275,8 +275,8 @@ struct ProgressWindowView: View {
             buttons(item)
 
             if showDetails {
-                Text(item.media == nil ? "Start positions and download progress by connections"
-                                       : "Download progress by stream")
+                Text(item.media == nil || item.segments.count > 2 ? "Start positions and download progress by connections"
+                                                                  : "Download progress by stream")
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                 SegmentBar(item: item, height: 16)
@@ -403,7 +403,9 @@ private struct ConnectionsTable: View {
         item.segments.sorted { $0.start < $1.start }.enumerated().map { n, seg in
             let info = info(for: seg)
             return Row(id: n + 1, downloaded: Format.bytes(seg.downloaded),
-                       info: item.media == nil ? info : "\(streamName(n)) — \(info)")
+                       // Videos fetched with parallel connections list connections like any file;
+                       // ones yt-dlp downloads list their streams.
+                       info: item.media == nil || item.segments.count > 2 ? info : "\(streamName(n)) — \(info)")
         }
     }
 

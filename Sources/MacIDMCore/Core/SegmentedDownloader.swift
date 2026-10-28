@@ -12,6 +12,9 @@ public struct EngineConfig: Sendable {
     public var ytdlpPath: URL?
     public var ffmpegPath: URL?
     public var jsRuntimePath: URL?
+    /// Largest byte range asked for in one request. Some servers (YouTube) slow down long requests,
+    /// so each connection then walks its segment in chunks of this size. nil = one request per segment.
+    public var maxRequestBytes: Int64?
 
     public static let safariUserAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
@@ -263,7 +266,10 @@ public actor SegmentedDownloader {
         while true {
             try Task.checkCancellation()
             do {
-                try await downloadOnce(index)
+                if try await downloadOnce(index) {
+                    attempt = 0 // finished a chunk; ask for the next one
+                    continue
+                }
                 return
             } catch {
                 if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
@@ -276,13 +282,21 @@ public actor SegmentedDownloader {
         }
     }
 
-    nonisolated private func downloadOnce(_ index: Int) async throws {
-        guard let job = try await beginAttempt(index) else { return }
+    /// Fetches the rest of the segment, or its next chunk. Returns true when another request is needed.
+    nonisolated private func downloadOnce(_ index: Int) async throws -> Bool {
+        guard let job = try await beginAttempt(index) else { return false }
+        var rangeHeader = job.segment.rangeHeader
+        var chunkEnd: Int64?
+        if job.useRange, let maxBytes = config.maxRequestBytes, maxBytes > 0, let end = job.segment.end,
+           end - job.segment.current + 1 > maxBytes {
+            chunkEnd = job.segment.current + maxBytes - 1
+            rangeHeader = "bytes=\(job.segment.current)-\(chunkEnd!)"
+        }
         var request = URLRequest(url: job.url, timeoutInterval: 30)
         request.setValue(config.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         for (name, value) in job.headers { request.setValue(value, forHTTPHeaderField: name) }
-        if job.useRange { request.setValue(job.segment.rangeHeader, forHTTPHeaderField: "Range") }
+        if job.useRange { request.setValue(rangeHeader, forHTTPHeaderField: "Range") }
 
         let (bytes, response) = try await session.bytes(for: request)
         defer { bytes.task.cancel() }
@@ -319,11 +333,19 @@ public actor SegmentedDownloader {
 
         for try await byte in bytes {
             buffer.append(byte)
-            if buffer.count >= chunk, try await !flush() { return }
+            if buffer.count >= chunk, try await !flush() { return false }
         }
-        if !buffer.isEmpty, try await !flush() { return }
+        if !buffer.isEmpty, try await !flush() { return false }
+        if let chunkEnd {
+            // The whole chunk arrived: move on to the next one; a short chunk is a real error.
+            if await currentOffset(index) > chunkEnd { return true }
+            throw DownloadError.incomplete
+        }
         try await endAttempt(index)
+        return false
     }
+
+    private func currentOffset(_ index: Int) -> Int64 { item.segments[index].current }
 
     // MARK: - Progress
 
