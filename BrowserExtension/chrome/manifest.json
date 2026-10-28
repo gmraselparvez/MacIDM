@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MacIDM",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Send downloads to the MacIDM download manager.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoOlZLcMhIEjTaqdYZpomLv60raygg6RNz0DHha+ERkI7WYWo7uXofnlmP/UdCer/nFCcPJr8W9WJU5AFWHEIBvdFLPP4sPVp2azjwPDwNts+1oMK/hQnP6AJx6SX/eUvge/WIZY+Gtu52inIsPcQONZW6d3O/LAcTc35pGKTzKM+ZEKEWGI3Z1Kb0e7LlFDJ85HuydfF9YLtdwT4Wr1Yfspd0C56BlyniPXQe4A1DfHwaPk4iR5TRRF6qbTandJVJ5uXEMd5OxqD+Nok1BYh0v6PeXsWcRL8zwlSq+Qbos+aAe5cMGNsSJ4SM9eSv+vLHOKhCUxVDT09SCc/8qm05wIDAQAB",
   "permissions": [
@@ -57,6 +57,13 @@
         "mac": "Alt+Shift+I"
       },
       "description": "Grab images from this page"
+    },
+    "download-pinterest": {
+      "suggested_key": {
+        "default": "Alt+Shift+P",
+        "mac": "Alt+Shift+P"
+      },
+      "description": "Download this Pinterest board or pin"
     }
   }
 }

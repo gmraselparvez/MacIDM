@@ -14,8 +14,9 @@
   function upgrade(url) {
     try {
       const u = new URL(url);
-      // Pinterest: every pin has a 736px version (originals can have another extension, so use the board downloader for those).
-      if (u.hostname === "i.pinimg.com") u.pathname = u.pathname.replace(/^\/(\d+x\d*|\d+x)\//, "/736x/");
+      // Pinterest: thumbnails (236x, 474x…) become the 736px version, which every pin has.
+      // Original-size links found on the page are kept as they are (their extension is right).
+      if (u.hostname === "i.pinimg.com") u.pathname = u.pathname.replace(/^\/\d+x\d*\//, "/736x/");
       // X / Twitter: ask for the original size.
       if (u.hostname === "pbs.twimg.com" && u.searchParams.has("name")) u.searchParams.set("name", "orig");
       return u.href;
@@ -38,6 +39,17 @@
     return best;
   }
 
+  /// The same picture in different sizes should appear once. Pinterest names every size of an
+  /// image with the same hash, so that's the key; originals beat 736x, which beats thumbnails.
+  function identity(url) {
+    const u = new URL(url);
+    if (u.hostname === "i.pinimg.com") {
+      const hash = u.pathname.split("/").pop().replace(/\.[a-z0-9]+$/i, "");
+      return { key: "pinimg:" + hash, rank: u.pathname.startsWith("/originals/") ? 2 : u.pathname.startsWith("/736x/") ? 1 : 0 };
+    }
+    return { key: u.href, rank: 0 };
+  }
+
   function collect() {
     const found = new Map();
     const add = (raw, w = 0, h = 0) => {
@@ -46,8 +58,11 @@
         const u = new URL(raw, location.href);
         if (u.protocol !== "https:" && u.protocol !== "http:") return; // skip data:/blob: images
         const url = upgrade(u.href);
-        const prev = found.get(url);
-        if (!prev || w * h > prev.w * prev.h) found.set(url, { url, w, h });
+        const { key, rank } = identity(url);
+        const prev = found.get(key);
+        if (!prev || rank > prev.rank || (rank === prev.rank && w * h > prev.w * prev.h)) {
+          found.set(key, { url, w: Math.max(w, prev?.w ?? 0), h: Math.max(h, prev?.h ?? 0), rank });
+        }
       } catch {}
     };
     for (const img of document.querySelectorAll("img")) {
@@ -106,17 +121,21 @@
       button.primary:hover { background: rgb(40,125,250); }
       button[disabled] { opacity: .4; pointer-events: none; }
       .close { padding: 4px 9px; font-size: 15px; }
-      .grid { flex: 1; overflow: auto; padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-content: start; }
-      .tile { position: relative; aspect-ratio: 1; border-radius: 9px; overflow: hidden; background: #2c2c32; cursor: pointer; outline: 2px solid transparent; }
-      .tile.on { outline-color: rgb(22,110,240); }
-      .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      /* Masonry: columns of images at their natural shape. */
+      .grid { flex: 1; overflow-y: auto; padding: 14px; }
+      .masonry { columns: 170px; column-gap: 12px; }
+      .tile { position: relative; display: block; margin: 0 0 12px; break-inside: avoid; border-radius: 10px; overflow: hidden;
+        background: #2c2c32; cursor: pointer; box-shadow: 0 0 0 2px transparent; transition: box-shadow .12s; }
+      .tile.on { box-shadow: 0 0 0 3px rgb(22,110,240); }
+      .tile:not(.on) img { opacity: .55; }
+      .tile img { width: 100%; height: auto; min-height: 60px; display: block; }
       .tile .check { position: absolute; top: 7px; left: 7px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0,0,0,.45);
         border: 2px solid rgba(255,255,255,.85); box-sizing: border-box; }
       .tile.on .check { background: rgb(22,110,240); border-color: #fff; }
       .tile.on .check::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: #fff; font-weight: 700; }
       .tile .dims { position: absolute; bottom: 6px; right: 6px; padding: 1px 6px; border-radius: 5px; background: rgba(0,0,0,.6); font-size: 10.5px; }
       .tile.hidden { display: none; }
-      .empty { grid-column: 1 / -1; text-align: center; padding: 60px 0; opacity: .6; }
+      .empty { column-span: all; text-align: center; padding: 60px 0; opacity: .6; }
       .status { font-size: 12px; }
     </style>
     <div class="backdrop">
@@ -133,7 +152,7 @@
           <button class="all">Select all</button><button class="none">Select none</button>
           <button class="close" title="Close (Esc)">✕</button>
         </header>
-        <div class="grid"></div>
+        <div class="grid"><div class="masonry"></div></div>
         <footer>
           <span class="status muted"></span>
           <span class="spacer"></span>
@@ -143,7 +162,7 @@
       </div>
     </div>`;
     const $ = (s) => shadow.querySelector(s);
-    const grid = $(".grid");
+    const grid = $(".masonry");
     const sizeSelect = $(".size");
     const go = $(".go");
     const tiles = [];

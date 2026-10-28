@@ -108,9 +108,12 @@ async function openImageGrabber(tabId) {
 }
 
 api.commands?.onCommand.addListener(async (command, tab) => {
-  if (command !== "grab-images") return;
   const target = tab ?? (await api.tabs.query({ active: true, currentWindow: true }))[0];
-  if (target?.id !== undefined) openImageGrabber(target.id);
+  if (command === "grab-images" && target?.id !== undefined) openImageGrabber(target.id);
+  // ⌥⇧P on a Pinterest board or pin: hand it to MacIDM's Pinterest window.
+  if (command === "download-pinterest" && /^https?:\/\/([a-z0-9-]+\.)*pinterest\.[a-z.]+\//i.test(target?.url || "")) {
+    sendToHost({ type: "pinterest", url: target.url });
+  }
 });
 
 api.contextMenus.onClicked.addListener(async (info, tab) => {

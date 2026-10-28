@@ -80,7 +80,8 @@ Requires macOS 13 Ventura or later on an Apple silicon Mac.
 | Add URL | ⌘N | Resume | ⌘R |
 | Grab Video | ⇧⌘N | Pause | ⌘. |
 | Batch Download | ⌥⌘N | Stop | ⇧⌘. |
-| Download from Pinterest | ⌥⌘P | Grab images (in the browser) | ⌥⇧I |
+| Download from Pinterest | ⌥⌘B | Grab images (in the browser) | ⌥⇧I |
+| Pinterest board (in the browser) | ⌥⇧P | | |
 | Import list | ⌘O | Resume All | ⇧⌘R |
 | Export list | ⇧⌘E | Pause All | ⇧⌘P |
 | Show in Finder | ⌥⌘F | Open | ⌘↓ |

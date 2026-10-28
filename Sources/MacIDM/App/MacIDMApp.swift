@@ -20,8 +20,9 @@ struct MacIDMApp: App {
                     .keyboardShortcut("n", modifiers: [.command, .shift])
                 Button("Batch Download…") { DownloadCommand.batch.post() }
                     .keyboardShortcut("n", modifiers: [.command, .option])
+                // ⌥⌘B ("board"); ⌥⌘P is Chrome's Print shortcut, so avoid it.
                 Button("Download from Pinterest…") { DownloadCommand.pinterest.post() }
-                    .keyboardShortcut("p", modifiers: [.command, .option])
+                    .keyboardShortcut("b", modifiers: [.command, .option])
                 Divider()
                 Button("Import List…") { DownloadCommand.importList.post() }
                     .keyboardShortcut("o")
