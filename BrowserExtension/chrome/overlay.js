@@ -2,6 +2,8 @@
 // Runs in every frame, so embedded players (YouTube iframes etc.) get it too.
 (() => {
   if (window.__macidmOverlay) return;
+  // Only HTML pages: SVG/XML documents (e.g. badge images opened directly) can't host a shadow root.
+  if (!(document.documentElement instanceof HTMLElement) || !document.contentType?.includes("html")) return;
   window.__macidmOverlay = true;
   const api = typeof browser !== "undefined" ? browser : chrome;
 

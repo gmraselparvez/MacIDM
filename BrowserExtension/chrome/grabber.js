@@ -2,6 +2,8 @@
 // chosen ones to MacIDM. Opened from the toolbar button, ⌥⇧I, or the page's right-click menu.
 (() => {
   if (window.__macidmGrabber) return;
+  // Only HTML pages: SVG/XML documents (e.g. badge images opened directly) can't host a shadow root.
+  if (!(document.documentElement instanceof HTMLElement) || !document.contentType?.includes("html")) return;
   window.__macidmGrabber = true;
   const api = typeof browser !== "undefined" ? browser : chrome;
 
