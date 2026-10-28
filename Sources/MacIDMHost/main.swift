@@ -43,7 +43,34 @@ func wakeApp() {
     open.waitUntilExit()
 }
 
+/// The browser that started us: our parent process is the browser (or one of its helpers).
+func callingBrowser() -> String {
+    var buffer = [CChar](repeating: 0, count: 4096)
+    let length = proc_pidpath(getppid(), &buffer, UInt32(buffer.count))
+    let path = length > 0 ? String(cString: buffer) : ""
+    return ExtensionHeartbeat.browserName(forProcessPath: path) ?? "Google Chrome"
+}
+
 let inbox = Inbox()
+
+/// Lists qualities for the on-page menu. The app runs yt-dlp: a process started from here would be part
+/// of Chrome's process tree, and macOS then refuses the files yt-dlp unpacks ("Python.framework is damaged").
+func formats(for request: BrowserRequest) -> Data {
+    func failure(_ message: String) -> Data { (try? JSONEncoder().encode(FormatsResponse(error: message))) ?? Data() }
+    guard request.validated() != nil else { return failure("invalid request") }
+    var request = request
+    let id = UUID().uuidString
+    request.requestID = id
+    do { try inbox.write(request) } catch { return failure(error.localizedDescription) }
+    wakeApp()
+    let deadline = Date().addingTimeInterval(90)
+    while Date() < deadline {
+        if let data = inbox.takeResponse(id: id) { return data }
+        Thread.sleep(forTimeInterval: 0.2)
+    }
+    return failure("MacIDM didn't answer in time. Is it running?")
+}
+
 while let header = readExactly(4), let length = NativeMessaging.length(of: header) {
     guard length > 0, length <= NativeMessaging.maxIncoming, let body = readExactly(length) else { break }
     guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
@@ -52,8 +79,17 @@ while let header = readExactly(4), let length = NativeMessaging.length(of: heade
     }
     switch json["type"] as? String {
     case "ping":
-        reply(["ok": true, "version": "0.3.0"])
-    case "download":
+        reply(["ok": true, "version": "0.4.0"])
+    case "formats":
+        guard let request = try? JSONDecoder().decode(BrowserRequest.self, from: body) else {
+            reply(["ok": false, "error": "invalid request"])
+            continue
+        }
+        FileHandle.standardOutput.write(NativeMessaging.frame(formats(for: request)))
+    case "hello":
+        try? ExtensionHeartbeat().record(callingBrowser())
+        reply(["ok": true, "version": "0.4.0"])
+    case "download", "media":
         guard let request = try? JSONDecoder().decode(BrowserRequest.self, from: body), request.validated() != nil else {
             reply(["ok": false, "error": "invalid download request"])
             continue

@@ -8,9 +8,9 @@ public actor MediaDownloader {
     private let onUpdate: @Sendable (DownloadItem) -> Void
     private var lastEmit = Date.distantPast
     /// Bytes from streams already finished (video, then audio, are separate downloads).
-    private var finishedStreams: Int64 = 0
+    /// One entry per stream yt-dlp fetches (video, then audio); shown as segments in the details view.
+    private var streams: [(total: Int64?, done: Int64)] = []
     private var lastDownloaded: Int64 = 0
-    private var currentTotal: Int64?
 
     public init(item: DownloadItem, config: EngineConfig, onUpdate: @escaping @Sendable (DownloadItem) -> Void) {
         self.item = item
@@ -47,14 +47,26 @@ public actor MediaDownloader {
         item.status = .downloading
         item.category = media.choice.isAudio ? .music : .video
         if item.fileName.isEmpty, let title = media.title { item.fileName = title }
-        finishedStreams = 0
+        streams = []
         lastDownloaded = 0
         emit(force: true)
 
+        do {
+            try await runYtDlp(ytdlp, media: media, dir: dir, headers: YTDLPService.withoutCookies(item.headers ?? [:]))
+        } catch MediaError.loginRequired where item.headers?["Cookie"] != nil {
+            try await runYtDlp(ytdlp, media: media, dir: dir, headers: item.headers ?? [:])
+        }
+    }
+
+    private func runYtDlp(_ ytdlp: URL, media: MediaRequest, dir: URL, headers: [String: String]) async throws {
+        streams = []
+        lastDownloaded = 0
         let process = Process()
         process.executableURL = ytdlp
         process.arguments = YTDLPService.downloadArguments(url: item.url, choice: media.choice, outputDir: dir,
-                                                          ffmpeg: config.ffmpegPath, headers: item.headers ?? [:])
+                                                          ffmpeg: config.ffmpegPath, headers: headers,
+                                                          jsRuntime: config.jsRuntimePath,
+                                                          limitBytesPerSecond: item.speedLimit)
         let out = Pipe(), err = Pipe()
         process.standardOutput = out
         process.standardError = err
@@ -84,7 +96,12 @@ public actor MediaDownloader {
             item.fileName = url.lastPathComponent
             if let size = (try? FileManager.default.attributesOfItem(atPath: savedPath)[.size] as? NSNumber)?.int64Value {
                 item.totalSize = size
-                item.segments = [Segment(index: 0, start: 0, end: size - 1, downloaded: size)]
+                if item.segments.isEmpty {
+                    item.segments = [Segment(index: 0, start: 0, end: size - 1, downloaded: size)]
+                } else {
+                    // Keep one row per stream for the details view, all marked complete.
+                    for i in item.segments.indices { item.segments[i].finished = true }
+                }
             }
         }
         item.status = .completed
@@ -94,13 +111,23 @@ public actor MediaDownloader {
 
     private func record(_ p: MediaProgress) {
         // A drop in downloaded bytes means yt-dlp moved on to the next stream.
-        if p.downloaded < lastDownloaded { finishedStreams += currentTotal ?? lastDownloaded }
+        if streams.isEmpty || p.downloaded < lastDownloaded {
+            if let last = streams.indices.last { streams[last].done = streams[last].total ?? streams[last].done }
+            streams.append((p.total, 0))
+        }
         lastDownloaded = p.downloaded
-        currentTotal = p.total
-        let done = finishedStreams + p.downloaded
-        let total = p.total.map { finishedStreams + $0 }
-        item.totalSize = total
-        item.segments = [Segment(index: 0, start: 0, end: total.map { max(done, $0) - 1 }, downloaded: done)]
+        streams[streams.count - 1] = (p.total, p.downloaded)
+
+        var start: Int64 = 0
+        var segments: [Segment] = []
+        for (i, s) in streams.enumerated() {
+            let length = max(s.total ?? s.done, s.done)
+            segments.append(Segment(index: i, start: start, end: s.total == nil ? nil : start + length - 1,
+                                    downloaded: s.done, finished: i < streams.count - 1))
+            start += length
+        }
+        item.segments = segments
+        item.totalSize = streams.allSatisfy { $0.total != nil } ? start : nil
         item.speed = p.speed ?? 0
         emit()
     }

@@ -32,13 +32,15 @@ public struct DownloadItem: Codable, Identifiable, Hashable, Sendable {
     public var headers: [String: String]?
     /// Set for video/audio grabbed through yt-dlp.
     public var media: MediaRequest?
+    /// Per-download cap in bytes/second (IDM's Speed Limiter tab); nil means no extra limit.
+    public var speedLimit: Int64?
 
     /// Bytes per second; transient, never persisted.
     public var speed: Double = 0
 
     enum CodingKeys: String, CodingKey {
         case id, url, finalURL, fileName, destinationDir, savedPath, totalSize, acceptsRanges, etag,
-             lastModified, status, errorMessage, segments, requestedSegments, category, dateAdded, dateCompleted, interruptedByNetwork, headers, media
+             lastModified, status, errorMessage, segments, requestedSegments, category, dateAdded, dateCompleted, interruptedByNetwork, headers, media, speedLimit
     }
 
     public init(url: URL, fileName: String = "", destinationDir: URL? = nil, requestedSegments: Int = 8) {

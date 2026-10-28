@@ -17,7 +17,7 @@ public enum Category: String, Codable, CaseIterable, Identifiable, Sendable {
         case .documents: return "doc.text"
         case .archives: return "archivebox"
         case .programs: return "app.badge"
-        case .other: return "questionmark.folder"
+        case .other: return "folder"
         }
     }
 

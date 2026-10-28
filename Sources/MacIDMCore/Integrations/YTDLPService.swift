@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// What the user picked in the video grabber.
@@ -18,6 +19,25 @@ public enum MediaChoice: Codable, Hashable, Sendable {
         case .best: return "bv*+ba/b"
         case .video(let h): return "bv*[height<=\(h)]+ba/b[height<=\(h)]"
         case .audio: return "ba/b"
+        }
+    }
+
+    /// Compact form used by the browser extension: "best", "video:720", "audio:mp3".
+    public var code: String {
+        switch self {
+        case .best: return "best"
+        case .video(let h): return "video:\(h)"
+        case .audio(let f): return "audio:\(f.rawValue)"
+        }
+    }
+
+    public init?(code: String) {
+        let parts = code.split(separator: ":").map(String.init)
+        switch (parts.first, parts.count) {
+        case ("best", 1): self = .best
+        case ("video", 2): guard let h = Int(parts[1]), h > 0 else { return nil }; self = .video(maxHeight: h)
+        case ("audio", 2): guard let f = AudioFormat(rawValue: parts[1]) else { return nil }; self = .audio(format: f)
+        default: return nil
         }
     }
 
@@ -101,6 +121,7 @@ public enum MediaError: Error, LocalizedError, Equatable, Sendable {
     case drmProtected
     case loginRequired
     case unavailable
+    case noFormats
     case failed(String)
 
     public var errorDescription: String? {
@@ -110,6 +131,7 @@ public enum MediaError: Error, LocalizedError, Equatable, Sendable {
         case .drmProtected: return "This video is DRM-protected. MacIDM doesn't download DRM-protected media."
         case .loginRequired: return "This video needs you to be signed in, or it's private."
         case .unavailable: return "This video isn't available (removed, private, or blocked in your region)."
+        case .noFormats: return "The site didn't offer any downloadable formats for this video. Try Settings › Video › Check for Updates."
         case .failed(let message): return message
         }
     }
@@ -177,9 +199,23 @@ public struct MediaProgress: Equatable, Sendable {
 public struct MediaTools: Sendable {
     public var ytdlp: URL?
     public var ffmpeg: URL?
+    /// Deno or Node.js. YouTube needs a JavaScript runtime for yt-dlp to see all formats.
+    public var jsRuntime: URL?
+
+    static func isExecutableFile(_ url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && !isDir.boolValue
+            && FileManager.default.isExecutableFile(atPath: url.path)
+    }
 
     public static var managedBinDir: URL {
         DownloadStore.appSupportDir.appendingPathComponent("bin", isDirectory: true)
+    }
+
+    public init(ytdlp: URL? = nil, ffmpeg: URL? = nil, jsRuntime: URL? = nil) {
+        self.ytdlp = ytdlp
+        self.ffmpeg = ffmpeg
+        self.jsRuntime = jsRuntime
     }
 
     public static func locate(bundledDir: URL? = Bundle.main.resourceURL?.appendingPathComponent("bin"),
@@ -190,16 +226,24 @@ public struct MediaTools: Sendable {
         dirs += ["/opt/homebrew/bin", "/usr/local/bin"].map { URL(fileURLWithPath: $0) }
         dirs += (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { URL(fileURLWithPath: String($0)) }
         func find(_ name: String) -> URL? {
-            dirs.map { $0.appendingPathComponent(name) }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+            for dir in dirs {
+                // yt-dlp's unpacked macOS build lives in a folder: yt-dlp/yt-dlp_macos (+ _internal).
+                for candidate in [dir.appendingPathComponent(name), dir.appendingPathComponent("\(name)/\(name)_macos")]
+                where isExecutableFile(candidate) {
+                    return candidate
+                }
+            }
+            return nil
         }
-        return MediaTools(ytdlp: find("yt-dlp"), ffmpeg: find("ffmpeg"))
+        return MediaTools(ytdlp: find("yt-dlp"), ffmpeg: find("ffmpeg"), jsRuntime: find("deno") ?? find("node"))
     }
 }
 
 public enum YTDLPService {
     /// Arguments for a download. `outputDir` gets `Title [id].ext`.
     public static func downloadArguments(url: URL, choice: MediaChoice, outputDir: URL,
-                                         ffmpeg: URL?, headers: [String: String] = [:]) -> [String] {
+                                         ffmpeg: URL?, headers: [String: String] = [:], jsRuntime: URL? = nil,
+                                         limitBytesPerSecond: Int64? = nil) -> [String] {
         var args = [
             "--newline", "--quiet", "--progress", "--no-warnings", "--no-playlist", "--no-mtime",
             "--concurrent-fragments", "4",
@@ -209,6 +253,8 @@ public enum YTDLPService {
             "-f", choice.formatSelector,
         ]
         if let ffmpeg { args += ["--ffmpeg-location", ffmpeg.path] }
+        args += jsRuntimeArguments(jsRuntime)
+        if let limit = limitBytesPerSecond, limit > 0 { args += ["--limit-rate", String(limit)] }
         switch choice {
         case .audio(let format):
             args += ["-x", "--audio-format", format.rawValue]
@@ -221,17 +267,39 @@ public enum YTDLPService {
         return args
     }
 
+    static func jsRuntimeArguments(_ runtime: URL?) -> [String] {
+        guard let runtime else { return [] }
+        return ["--js-runtimes", "\(runtime.lastPathComponent):\(runtime.path)"]
+    }
+
+    /// The browser's cookies make YouTube treat yt-dlp as a signed-in web client, which can hide every
+    /// format. So cookies are only sent on a retry, when the site says sign-in is needed.
+    public static func withoutCookies(_ headers: [String: String]) -> [String: String] {
+        headers.filter { $0.key.caseInsensitiveCompare("Cookie") != .orderedSame && $0.key.caseInsensitiveCompare("User-Agent") != .orderedSame }
+    }
+
     static func headerArguments(_ headers: [String: String]) -> [String] {
         headers.sorted { $0.key < $1.key }.flatMap { ["--add-header", "\($0.key):\($0.value)"] }
     }
 
     /// Runs `yt-dlp -J` and returns the formats on offer.
-    public static func fetchInfo(url: URL, ytdlp: URL, headers: [String: String] = [:]) async throws -> MediaInfo {
+    public static func fetchInfo(url: URL, ytdlp: URL, headers: [String: String] = [:], jsRuntime: URL? = nil) async throws -> MediaInfo {
         if MediaError.isKnownDRMService(url) { throw MediaError.drmProtected }
-        let args = ["-J", "--no-playlist", "--no-warnings"] + headerArguments(headers) + ["--", url.absoluteString]
-        let result = try await ProcessRunner.run(ytdlp, args)
-        guard result.status == 0 else { throw MediaError.classify(stderr: result.stderr) }
-        return try parseInfo(Data(result.stdout.utf8))
+        func attempt(_ headers: [String: String]) async throws -> MediaInfo {
+            // --ignore-no-formats-error: report "no formats" ourselves instead of a misleading format error.
+            let args = ["-J", "--no-playlist", "--no-warnings", "--ignore-no-formats-error"]
+                + jsRuntimeArguments(jsRuntime) + headerArguments(headers) + ["--", url.absoluteString]
+            let result = try await ProcessRunner.run(ytdlp, args)
+            guard result.status == 0 else { throw MediaError.classify(stderr: result.stderr) }
+            let info = try parseInfo(Data(result.stdout.utf8))
+            guard info.formats.contains(where: { $0.hasVideo || $0.hasAudio }) else { throw MediaError.noFormats }
+            return info
+        }
+        do {
+            return try await attempt(withoutCookies(headers))
+        } catch let error as MediaError where (error == .loginRequired || error == .noFormats) && headers["Cookie"] != nil {
+            return try await attempt(headers)
+        }
     }
 
     public static func parseInfo(_ data: Data) throws -> MediaInfo {
@@ -257,19 +325,50 @@ public enum YTDLPService {
                          formats: formats)
     }
 
-    /// Updates the user-writable copy of yt-dlp (copying the bundled one there first).
-    public static func update(tools: MediaTools) async throws -> String {
-        let fm = FileManager.default
-        let managed = MediaTools.managedBinDir.appendingPathComponent("yt-dlp")
-        if !fm.isExecutableFile(atPath: managed.path) {
-            guard let source = tools.ytdlp else { throw MediaError.toolMissing }
-            try fm.createDirectory(at: MediaTools.managedBinDir, withIntermediateDirectories: true)
-            try fm.copyItem(at: source, to: managed)
+    static let releaseBase = URL(string: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/")!
+
+    /// Installs the latest official unpacked macOS build (yt-dlp_macos.zip) into `dir/yt-dlp/`, after
+    /// checking it against the release's SHA2-256SUMS. The unpacked build starts in a fraction of a second
+    /// and never extracts Python into temporary folders (which macOS can refuse to run).
+    /// Returns the installed version, or nil if `currentVersion` is already the latest.
+    public static func installLatest(currentVersion: String?, into dir: URL = MediaTools.managedBinDir,
+                                     session: URLSession = .shared) async throws -> String? {
+        let (sums, _) = try await session.data(from: releaseBase.appendingPathComponent("SHA2-256SUMS"))
+        guard let line = String(decoding: sums, as: UTF8.self).split(separator: "\n")
+                .first(where: { $0.hasSuffix(" yt-dlp_macos.zip") }),
+              let expected = line.split(separator: " ").first.map(String.init) else {
+            throw MediaError.failed("Couldn't read the yt-dlp release checksums.")
         }
-        let result = try await ProcessRunner.run(managed, ["-U"])
-        let output = (result.stdout + result.stderr).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard result.status == 0 else { throw MediaError.failed(output.isEmpty ? "Update failed." : output) }
-        return output
+        let target = dir.appendingPathComponent("yt-dlp", isDirectory: true)
+        let latestTag = try? await latestVersion(session: session)
+        if let latestTag, latestTag == currentVersion, MediaTools.isExecutableFile(target.appendingPathComponent("yt-dlp_macos")) {
+            return nil
+        }
+        let (zip, _) = try await session.download(from: releaseBase.appendingPathComponent("yt-dlp_macos.zip"))
+        defer { try? FileManager.default.removeItem(at: zip) }
+        let digest = SHA256.hash(data: try Data(contentsOf: zip, options: .mappedIfSafe))
+        guard digest.map({ String(format: "%02x", $0) }).joined() == expected else {
+            throw MediaError.failed("The yt-dlp download didn't match its published checksum, so it wasn't installed.")
+        }
+        let fm = FileManager.default
+        let staging = dir.appendingPathComponent(".yt-dlp-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: staging) }
+        let unzip = try await ProcessRunner.run(URL(fileURLWithPath: "/usr/bin/ditto"), ["-x", "-k", zip.path, staging.path])
+        guard unzip.status == 0, MediaTools.isExecutableFile(staging.appendingPathComponent("yt-dlp_macos")) else {
+            throw MediaError.failed("Couldn't unpack yt-dlp: \(unzip.stderr)")
+        }
+        try? fm.removeItem(at: target) // also clears an older single-file yt-dlp of the same name
+        try fm.moveItem(at: staging, to: target)
+        return await version(target.appendingPathComponent("yt-dlp_macos")) ?? latestTag ?? "latest"
+    }
+
+    /// The newest release tag, from GitHub's redirect for /releases/latest.
+    public static func latestVersion(session: URLSession = .shared) async throws -> String {
+        var request = URLRequest(url: URL(string: "https://github.com/yt-dlp/yt-dlp/releases/latest")!)
+        request.httpMethod = "HEAD"
+        let (_, response) = try await session.data(for: request)
+        return response.url?.lastPathComponent ?? ""
     }
 
     public static func version(_ ytdlp: URL) async -> String? {
@@ -303,6 +402,46 @@ public enum ProcessRunner {
                           stdout: String(decoding: o, as: UTF8.self), stderr: String(decoding: e, as: UTF8.self))
         } onCancel: {
             process.interrupt()
+        }
+    }
+}
+
+/// Answer for the browser's on-page quality menu. The app builds it (it runs yt-dlp); the helper relays it.
+public struct FormatsResponse: Codable, Equatable, Sendable {
+    public struct Choice: Codable, Equatable, Sendable {
+        public var code: String
+        public var label: String
+        public var size: Int64?
+
+        public init(code: String, label: String, size: Int64?) {
+            self.code = code
+            self.label = label
+            self.size = size
+        }
+    }
+
+    public var ok: Bool
+    public var title: String?
+    public var choices: [Choice]?
+    public var error: String?
+
+    public init(info: MediaInfo) {
+        ok = true
+        title = info.title
+        choices = info.choices.map { Choice(code: $0.code, label: Self.label($0), size: info.estimatedSize(for: $0)) }
+    }
+
+    public init(error: String) {
+        ok = false
+        self.error = error
+    }
+
+    /// IDM-style menu labels: "MP4 · 1080p HD", "MP3 · audio only".
+    public static func label(_ choice: MediaChoice) -> String {
+        switch choice {
+        case .best: return "MP4 · best quality"
+        case .video(let h): return "MP4 · \(h)p" + (h >= 2160 ? " 4K" : h >= 720 ? " HD" : "")
+        case .audio(let f): return "\(f.rawValue.uppercased()) · audio only"
         }
     }
 }

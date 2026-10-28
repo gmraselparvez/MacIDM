@@ -6,6 +6,7 @@ const DEFAULTS = {
   autoCapture: false,
   extensions: "zip rar 7z tar gz tgz bz2 xz iso dmg pkg exe msi deb rpm apk mp4 mkv mov avi webm mp3 m4a flac wav pdf epub",
   minSizeMB: 1,
+  videoButton: true,
 };
 
 async function settings() {
@@ -51,8 +52,29 @@ async function sendDownload({ url, referrer, incognito, fileName }) {
   });
 }
 
+/// A video page (YouTube etc.) goes to MacIDM's video grabber, which lets the user pick a quality.
+async function sendMedia({ url, title, incognito, choice }) {
+  if (!/^https?:/i.test(url)) return { ok: false, error: "unsupported URL" };
+  return sendToHost({
+    type: "media",
+    url,
+    cookies: await cookieHeader(url, incognito),
+    userAgent: navigator.userAgent,
+    fileName: title || undefined,
+    choice: choice || undefined,
+  });
+}
+
+// Direct media files can use the fast segmented downloader; anything else (blob:, streams) needs yt-dlp.
+const DIRECT_MEDIA = /\.(mp4|m4v|webm|mov|mkv|mp3|m4a|ogg|wav)(\?|#|$)/i;
+
+// Tell MacIDM the extension is installed (shown as "Ready" in its Settings › Browser).
+const sayHello = () => sendToHost({ type: "hello", version: api.runtime.getManifest().version });
+api.runtime.onStartup.addListener(sayHello);
+
 // Context menu: links and media elements.
 api.runtime.onInstalled.addListener(() => {
+  sayHello();
   api.contextMenus.create({
     id: "macidm-download",
     title: "Download with MacIDM",
@@ -64,6 +86,12 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
   // On an image/video inside a link, the media file is what the user means, not the link target.
   const url = info.mediaType ? info.srcUrl || info.linkUrl : info.linkUrl || info.srcUrl;
   if (!url) return;
+  // Streamed video (blob: source): hand the page to the video grabber instead.
+  if ((info.mediaType === "video" || info.mediaType === "audio") && !DIRECT_MEDIA.test(url)) {
+    const r = await sendMedia({ url: info.frameUrl || info.pageUrl || tab?.url, title: tab?.title, incognito: tab?.incognito });
+    if (!r.ok) console.warn("MacIDM: could not hand off video:", r.error);
+    return;
+  }
   const result = await sendDownload({ url, referrer: info.pageUrl || tab?.url, incognito: tab?.incognito });
   if (!result.ok) console.warn("MacIDM: could not hand off download:", result.error);
 });
@@ -106,7 +134,31 @@ if (api.downloads?.onCreated) {
 // Lets the options page test the connection.
 api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "ping") {
+    sayHello();
     sendToHost({ type: "ping" }).then(sendResponse);
+    return true;
+  }
+  // From the "Download this video" button (overlay.js).
+  if (message?.type === "grabVideo") {
+    const incognito = _sender.tab?.incognito;
+    const direct = /^https?:/i.test(message.src) && DIRECT_MEDIA.test(message.src);
+    const sent = direct
+      ? sendDownload({ url: message.src, referrer: message.pageUrl, incognito })
+      : sendMedia({ url: message.pageUrl, title: message.title, incognito, choice: message.choice });
+    sent.then(sendResponse);
+    return true;
+  }
+  // Qualities for the on-page menu; MacIDM's helper asks yt-dlp.
+  if (message?.type === "videoFormats") {
+    (async () => {
+      if (!/^https?:/i.test(message.pageUrl)) return { ok: false, error: "unsupported URL" };
+      return sendToHost({
+        type: "formats",
+        url: message.pageUrl,
+        cookies: await cookieHeader(message.pageUrl, _sender.tab?.incognito),
+        userAgent: navigator.userAgent,
+      });
+    })().then(sendResponse);
     return true;
   }
 });

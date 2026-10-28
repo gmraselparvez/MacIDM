@@ -56,8 +56,9 @@ struct AddDownloadSheet: View {
     }
 
     private func submit(startNow: Bool) {
-        if state.add(urlString: urlString, fileName: fileName, folder: folder, segments: segments, startNow: startNow) {
+        if let id = state.add(urlString: urlString, fileName: fileName, folder: folder, segments: segments, startNow: startNow) {
             dismiss()
+            if startNow { state.showProgressWindowIfEnabled(id) }
         } else {
             invalid = true
         }

@@ -6,6 +6,8 @@ public actor DownloadEngine {
     private let session: URLSession
     private var running: [UUID: Task<DownloadItem, Never>] = [:]
     private let limiter = SpeedLimiter()
+    /// One limiter per download, so its cap can change while it runs.
+    private var itemLimiters: [UUID: SpeedLimiter] = [:]
 
     public init(config: EngineConfig, session: URLSession? = nil) {
         self.config = config
@@ -28,6 +30,18 @@ public actor DownloadEngine {
         await limiter.setLimit(bytesPerSecond)
     }
 
+    /// Caps one download; nil or 0 removes the cap. Takes effect immediately if it's running.
+    public func setSpeedLimit(_ id: UUID, bytesPerSecond: Int64?) async {
+        await itemLimiter(id).setLimit(bytesPerSecond ?? 0)
+    }
+
+    private func itemLimiter(_ id: UUID) -> SpeedLimiter {
+        if let l = itemLimiters[id] { return l }
+        let l = SpeedLimiter()
+        itemLimiters[id] = l
+        return l
+    }
+
     public func isRunning(_ id: UUID) -> Bool { running[id] != nil }
 
     public func start(_ item: DownloadItem, onUpdate: @escaping @Sendable (DownloadItem) -> Void) {
@@ -42,7 +56,10 @@ public actor DownloadEngine {
             }
             return
         }
-        let downloader = SegmentedDownloader(item: item, config: config, session: session, limiter: limiter, onUpdate: onUpdate)
+        let perItem = itemLimiter(id)
+        if let cap = item.speedLimit, cap > 0 { Task { await perItem.setLimit(cap) } }
+        let downloader = SegmentedDownloader(item: item, config: config, session: session, limiter: limiter,
+                                             itemLimiter: perItem, onUpdate: onUpdate)
         running[id] = Task {
             let result = await downloader.run()
             self.finished(id)

@@ -25,9 +25,10 @@ COPYFILE_DISABLE=1 cp Assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 COPYFILE_DISABLE=1 cp -R BrowserExtension/chrome "$APP/Contents/Resources/BrowserExtension/chrome"
 # Media tools from scripts/fetch-tools.sh (optional; MacIDM falls back to Homebrew/PATH).
 mkdir -p "$APP/Contents/Resources/bin"
-for tool in yt-dlp ffmpeg; do
-  if [[ -x vendor/$tool ]]; then COPYFILE_DISABLE=1 cp vendor/$tool "$APP/Contents/Resources/bin/$tool"; fi
-done
+if [[ -f vendor/yt-dlp_macos.zip ]]; then
+  ditto -x -k vendor/yt-dlp_macos.zip "$APP/Contents/Resources/bin/yt-dlp"
+fi
+if [[ -x vendor/ffmpeg ]]; then COPYFILE_DISABLE=1 cp vendor/ffmpeg "$APP/Contents/Resources/bin/ffmpeg"; fi
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -54,9 +55,19 @@ if [[ "$SIGN_IDENTITY" == "-" ]]; then
 else
   SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --options runtime --timestamp)
 fi
-for nested in "$APP/Contents/Resources/bin/"*(N) "$APP/Contents/MacOS/MacIDMHost"; do
-  codesign "${SIGN_ARGS[@]}" "$nested"
+# Every Mach-O inside the bundled tools (yt-dlp's folder holds Python and many libraries).
+# Loose binaries first (skipping framework contents), then each framework as a whole.
+find "$APP/Contents/Resources/bin" -type f -not -path "*.framework/*" -print0 | while IFS= read -r -d '' f; do
+  if file -b "$f" | grep -q Mach-O; then codesign "${SIGN_ARGS[@]}" "$f"; fi
 done
+# Sign each framework version folder (Python.framework's Info.plist doesn't mark it as a framework,
+# so signing the .framework itself is "ambiguous").
+find "$APP/Contents/Resources/bin" -type d -name "*.framework" -print0 | while IFS= read -r -d '' fw; do
+  for version in "$fw"/Versions/*(/N); do
+    [[ -L "$version" ]] || codesign "${SIGN_ARGS[@]}" "$version"
+  done
+done
+codesign "${SIGN_ARGS[@]}" "$APP/Contents/MacOS/MacIDMHost"
 codesign "${SIGN_ARGS[@]}" "$APP/Contents/MacOS/MacIDM"
 codesign "${SIGN_ARGS[@]}" "$APP"
 codesign --verify --deep --strict "$APP"

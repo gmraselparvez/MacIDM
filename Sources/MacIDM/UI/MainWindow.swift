@@ -27,17 +27,34 @@ struct MainWindow: View {
     @State private var transferMessage: String?
     @State private var confirmDelete = false
 
+    @State private var search = ""
+
     private var visible: [DownloadItem] {
-        state.items.filter { (filter ?? .all).matches($0) }
+        state.items.filter { item in
+            (filter ?? .all).matches(item) && (search.isEmpty
+                || item.displayName.localizedCaseInsensitiveContains(search)
+                || item.url.absoluteString.localizedCaseInsensitiveContains(search))
+        }
     }
 
     private var selectedItems: [DownloadItem] { state.items.filter { selection.contains($0.id) } }
 
+    private var title: String {
+        switch filter ?? .all {
+        case .all: return "All Downloads"
+        case .downloading: return "Downloading"
+        case .queued: return "Queued"
+        case .completed: return "Completed"
+        case .unfinished: return "Unfinished"
+        case .category(let c): return c.rawValue
+        }
+    }
+
     var body: some View {
         NavigationSplitView {
             List(selection: $filter) {
-                Section("Downloads") {
-                    row("All", "tray.full", .all)
+                Section("Library") {
+                    row("All Downloads", "tray.full", .all)
                     row("Downloading", "arrow.down.circle", .downloading)
                     row("Queued", "clock", .queued)
                     row("Completed", "checkmark.circle", .completed)
@@ -49,15 +66,25 @@ struct MainWindow: View {
                     }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190)
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 210)
         } detail: {
-            VSplitView {
-                table.frame(minHeight: 200)
-                if let item = selectedItems.count == 1 ? selectedItems.first : nil {
-                    DownloadDetail(item: item)
-                        .frame(minHeight: 150, idealHeight: 190)
+            VStack(spacing: 0) {
+                if visible.isEmpty {
+                    EmptyDownloadsView(filtered: !state.items.isEmpty || !search.isEmpty,
+                                       add: { showingAdd = true }, grab: { showingGrab = true })
+                } else {
+                    list
                 }
+                if let item = selectedItems.count == 1 ? selectedItems.first : nil, item.errorMessage != nil {
+                    Divider()
+                    DownloadDetail(item: item).frame(maxHeight: 190)
+                }
+                StatusBar()
             }
+            .navigationTitle(title)
+            .navigationSubtitle(visible.isEmpty ? "" : "\(visible.count) item\(visible.count == 1 ? "" : "s")")
+            .searchable(text: $search, placement: .toolbar, prompt: "Search downloads")
         }
         .toolbar { toolbar }
         .sheet(isPresented: $showingAdd) { AddDownloadSheet() }
@@ -79,8 +106,8 @@ struct MainWindow: View {
             get: { state.pendingClipboardURL != nil },
             set: { if !$0 { state.pendingClipboardURL = nil } })
         ) {
-            Button("Download") {
-                if let url = state.pendingClipboardURL { state.add(urlString: url) }
+            Button("Download…") {
+                if let s = state.pendingClipboardURL, let url = URL(string: s) { state.showConfirm(url: url) }
                 state.pendingClipboardURL = nil
             }
             Button("Add to Queue") {
@@ -135,39 +162,16 @@ struct MainWindow: View {
         do { try state.exportList(to: url) } catch { transferMessage = "Couldn't export: \(error.localizedDescription)" }
     }
 
+    /// Finder-style row: a plain symbol tinted with the system accent color.
     private func row(_ title: String, _ symbol: String, _ value: SidebarFilter) -> some View {
-        let count = state.items.filter(value.matches).count
-        return Label(title, systemImage: symbol)
-            .badge(count)
-            .tag(value)
+        Label(title, systemImage: symbol).tag(value)
     }
 
-    private var table: some View {
-        Table(visible, selection: $selection) {
-            TableColumn("Name") { item in
-                HStack(spacing: 6) {
-                    Image(systemName: item.category.symbolName).foregroundStyle(.secondary)
-                    Text(item.displayName).lineLimit(1).truncationMode(.middle)
-                }
-            }
-            .width(min: 180, ideal: 280)
-            TableColumn("Size") { item in
-                Text(item.totalSize.map(Format.bytes) ?? "—").monospacedDigit()
-            }
-            .width(min: 60, ideal: 80)
-            TableColumn("Progress") { item in ProgressCell(item: item) }
-                .width(min: 120, ideal: 200)
-            TableColumn("Speed") { item in
-                Text(item.status == .downloading ? Format.speed(item.speed) : "").monospacedDigit()
-            }
-            .width(min: 60, ideal: 90)
-            TableColumn("ETA") { item in
-                Text(item.eta.map(Format.duration) ?? "").monospacedDigit()
-            }
-            .width(min: 50, ideal: 70)
-            TableColumn("Status") { item in StatusLabel(item: item) }
-                .width(min: 80, ideal: 110)
+    private var list: some View {
+        List(visible, selection: $selection) { item in
+            DownloadCard(item: item).tag(item.id)
         }
+        .listStyle(.inset(alternatesRowBackgrounds: false))
         .contextMenu(forSelectionType: UUID.self) { ids in
             Button("Resume") { state.resume(ids) }
             Button("Start Now") { state.startNow(ids) }
@@ -176,6 +180,7 @@ struct MainWindow: View {
             Button("Stop") { state.cancel(ids) }
             Divider()
             if ids.count == 1, let id = ids.first {
+                Button("Show Download Window") { state.showProgressWindow(id) }
                 Button("Open") { state.open(id) }
                     .disabled(state.item(id)?.status != .completed)
                 Button("Show in Finder") { state.reveal(id) }
@@ -187,7 +192,9 @@ struct MainWindow: View {
             }
             Button("Remove…") { selection = ids; confirmDelete = true }
         } primaryAction: { ids in
-            if let id = ids.first, state.item(id)?.status == .completed { state.open(id) }
+            // Double-click: open finished files, otherwise show the download window.
+            guard let id = ids.first else { return }
+            if state.item(id)?.status == .completed { state.open(id) } else { state.showProgressWindow(id) }
         }
         .onDeleteCommand { if !selection.isEmpty { confirmDelete = true } }
     }

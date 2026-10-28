@@ -51,6 +51,26 @@ import Testing
         }
     }
 
+    @Test func choiceCodesRoundTrip() {
+        for c: MediaChoice in [.best, .video(maxHeight: 1080), .audio(format: .m4a)] {
+            #expect(MediaChoice(code: c.code) == c)
+        }
+        #expect(MediaChoice(code: "video:abc") == nil && MediaChoice(code: "audio:wav") == nil && MediaChoice(code: "") == nil)
+    }
+
+    @Test func dropsCookiesForFirstAttempt() {
+        let h = YTDLPService.withoutCookies(["Cookie": "SID=1", "User-Agent": "Chrome", "Referer": "https://www.youtube.com/"])
+        #expect(h == ["Referer": "https://www.youtube.com/"])
+        let args = YTDLPService.downloadArguments(url: URL(string: "https://e.com/v")!, choice: .best,
+                                                  outputDir: URL(fileURLWithPath: "/tmp"), ffmpeg: nil,
+                                                  jsRuntime: URL(fileURLWithPath: "/usr/local/bin/node"))
+        #expect(args.contains("node:/usr/local/bin/node"))
+        let limited = YTDLPService.downloadArguments(url: URL(string: "https://e.com/v")!, choice: .best,
+                                                     outputDir: URL(fileURLWithPath: "/tmp"), ffmpeg: nil,
+                                                     limitBytesPerSecond: 2_097_152)
+        #expect(limited.contains("--limit-rate") && limited.contains("2097152"))
+    }
+
     @Test func buildsArguments() {
         let args = YTDLPService.downloadArguments(
             url: URL(string: "https://example.com/v")!, choice: .video(maxHeight: 720),
@@ -111,12 +131,17 @@ echo "$file"
         var item = DownloadItem(url: URL(string: "https://video.example/watch")!)
         item.media = MediaRequest(choice: .best, title: "Fake Video")
         let maxDone = ManagedMax()
-        let result = await MediaDownloader(item: item, config: config) { maxDone.record($0.downloadedBytes) }.run()
+        let lastSegments = ManagedMax()
+        let result = await MediaDownloader(item: item, config: config) {
+            maxDone.record($0.downloadedBytes)
+            if $0.status == .downloading { lastSegments.record(Int64($0.segments.count)) }
+        }.run()
         #expect(result.status == .completed, "\(result.errorMessage ?? "")")
         #expect(result.savedPath?.lastPathComponent == "Fake Video [abc].mp4")
         #expect(result.savedPath?.deletingLastPathComponent().lastPathComponent == "Video")
         #expect(result.totalSize == 1200)
         #expect(maxDone.value == 1200) // 1000 from the video stream + 200 from audio
+        #expect(lastSegments.value == 2) // shown as two streams in the details view
     }
 
     @Test func reportsDRMClearly() async throws {

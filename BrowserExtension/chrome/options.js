@@ -3,6 +3,7 @@ const DEFAULTS = {
   autoCapture: false,
   extensions: "zip rar 7z tar gz tgz bz2 xz iso dmg pkg exe msi deb rpm apk mp4 mkv mov avi webm mp3 m4a flac wav pdf epub",
   minSizeMB: 1,
+  videoButton: true,
 };
 const $ = (id) => document.getElementById(id);
 
@@ -10,6 +11,7 @@ api.storage.sync.get(DEFAULTS).then((s) => {
   $("autoCapture").checked = s.autoCapture;
   $("extensions").value = s.extensions;
   $("minSizeMB").value = s.minSizeMB;
+  $("videoButton").checked = s.videoButton;
 });
 
 function save() {
@@ -17,9 +19,10 @@ function save() {
     autoCapture: $("autoCapture").checked,
     extensions: $("extensions").value,
     minSizeMB: Number($("minSizeMB").value) || 0,
+    videoButton: $("videoButton").checked,
   });
 }
-["autoCapture", "extensions", "minSizeMB"].forEach((id) => $(id).addEventListener("change", save));
+["autoCapture", "extensions", "minSizeMB", "videoButton"].forEach((id) => $(id).addEventListener("change", save));
 
 $("test").addEventListener("click", async () => {
   $("status").className = "";

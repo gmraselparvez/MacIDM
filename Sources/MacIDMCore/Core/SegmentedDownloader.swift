@@ -11,6 +11,7 @@ public struct EngineConfig: Sendable {
     public var bufferSize: Int
     public var ytdlpPath: URL?
     public var ffmpegPath: URL?
+    public var jsRuntimePath: URL?
 
     public static let safariUserAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
@@ -23,7 +24,8 @@ public struct EngineConfig: Sendable {
                 progressInterval: TimeInterval = 0.25,
                 bufferSize: Int = 256 * 1024,
                 ytdlpPath: URL? = nil,
-                ffmpegPath: URL? = nil) {
+                ffmpegPath: URL? = nil,
+                jsRuntimePath: URL? = nil) {
         self.userAgent = userAgent
         self.retries = retries
         self.downloadsRoot = downloadsRoot
@@ -33,6 +35,7 @@ public struct EngineConfig: Sendable {
         self.bufferSize = bufferSize
         self.ytdlpPath = ytdlpPath
         self.ffmpegPath = ffmpegPath
+        self.jsRuntimePath = jsRuntimePath
     }
 }
 
@@ -44,6 +47,7 @@ public actor SegmentedDownloader {
     private let session: URLSession
     private let onUpdate: @Sendable (DownloadItem) -> Void
     private let limiter: SpeedLimiter?
+    private let itemLimiter: SpeedLimiter?
 
     private var lastEmit = Date.distantPast
     private var sampleStart = Date()
@@ -51,9 +55,10 @@ public actor SegmentedDownloader {
     private var smoothedSpeed: Double = 0
 
     public init(item: DownloadItem, config: EngineConfig, session: URLSession, limiter: SpeedLimiter? = nil,
-                onUpdate: @escaping @Sendable (DownloadItem) -> Void) {
+                itemLimiter: SpeedLimiter? = nil, onUpdate: @escaping @Sendable (DownloadItem) -> Void) {
         self.item = item
         self.limiter = limiter
+        self.itemLimiter = itemLimiter
         self.config = config
         self.session = session
         self.onUpdate = onUpdate
@@ -303,6 +308,7 @@ public actor SegmentedDownloader {
 
         func flush() async throws -> Bool {
             if let limiter { await limiter.acquire(buffer.count) }
+            if let itemLimiter { await itemLimiter.acquire(buffer.count) }
             let (allowed, complete) = await reserve(index, count: buffer.count)
             if allowed > 0 {
                 do { try handle.write(contentsOf: buffer.prefix(allowed)) } catch { throw DownloadError.map(error) }

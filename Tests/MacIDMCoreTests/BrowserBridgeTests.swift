@@ -12,6 +12,13 @@ import Testing
         #expect(v.fileName == "a.zip")
     }
 
+    @Test func acceptsVideoPageRequests() throws {
+        var r = BrowserRequest(url: "https://www.youtube.com/watch?v=abc", fileName: "Clip - YouTube")
+        r.type = "media"
+        #expect(r.isMedia)
+        #expect(try #require(r.validated()).url.host == "www.youtube.com")
+    }
+
     @Test func rejectsUnsafeInput() {
         #expect(BrowserRequest(url: "file:///etc/passwd").validated() == nil)
         #expect(BrowserRequest(url: "javascript:alert(1)").validated() == nil)
@@ -112,5 +119,96 @@ import Testing
         let anon = DownloadItem(url: URL(string: "https://cookie.mock/private.zip")!)
         await engine.start(anon) { _ in }
         #expect(await engine.wait(anon.id)?.status == .failed)
+    }
+}
+
+@Suite struct ExtensionDetectionTests {
+    @Test func detectsExtensionInAnyProfileAndRefreshesMovedHost() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let installer = NativeHostInstaller(applicationSupport: root)
+        let chrome = NativeHostInstaller.browsers[0]
+        let profile = root.appendingPathComponent("Google/Chrome/Profile 2")
+        try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
+        #expect(!installer.isExtensionInstalled(chrome))
+        try Data(#"{"extensions":{"settings":{"hmjonefkfhiehppllmijhjlmcnnhacnk":{}}}}"#.utf8)
+            .write(to: profile.appendingPathComponent("Secure Preferences"))
+        #expect(installer.isExtensionInstalled(chrome))
+
+        let old = URL(fileURLWithPath: "/Volumes/X/MacIDM.app/Contents/MacOS/MacIDMHost")
+        let new = URL(fileURLWithPath: "/Applications/MacIDM.app/Contents/MacOS/MacIDMHost")
+        try installer.install(chrome, hostPath: old)
+        #expect(installer.refreshInstalled(hostPath: new).map(\.name) == ["Google Chrome"])
+        #expect(installer.isInstalled(chrome, hostPath: new))
+        #expect(installer.refreshInstalled(hostPath: new).isEmpty)
+    }
+}
+
+@Suite struct PerDownloadLimitTests {
+    @Test func capsOneDownload() async throws {
+        let payload = Data(count: 600_000)
+        MockServer.register("capped.mock", .init(payload: payload))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let engine = DownloadEngine(config: EngineConfig(downloadsRoot: root, partsRoot: root.appendingPathComponent("p"),
+                                                         bufferSize: 16 * 1024), session: MockServer.session())
+        var item = DownloadItem(url: URL(string: "https://capped.mock/f.bin")!, requestedSegments: 4)
+        item.speedLimit = 200_000 // 200 KB/s: first second is burst, the rest takes ~2 s
+        let start = Date()
+        await engine.start(item) { _ in }
+        let result = try #require(await engine.wait(item.id))
+        #expect(result.status == .completed)
+        #expect(Date().timeIntervalSince(start) > 1.5)
+    }
+}
+
+@Suite struct HeartbeatTests {
+    @Test func recordsPerBrowserAndIdentifiesCaller() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let beat = ExtensionHeartbeat(fileURL: file)
+        #expect(beat.lastSeen("Google Chrome") == nil)
+        try beat.record("Google Chrome")
+        #expect(beat.lastSeen("Google Chrome") != nil && beat.lastSeen("Brave") == nil)
+        #expect(ExtensionHeartbeat.browserName(forProcessPath:
+            "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper") == "Google Chrome")
+        #expect(ExtensionHeartbeat.browserName(forProcessPath: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser") == "Brave")
+        #expect(ExtensionHeartbeat.browserName(forProcessPath: "/usr/bin/python3") == nil)
+    }
+}
+
+@Suite struct FormatsRelayTests {
+    @Test func responseRoundTripsThroughInbox() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let inbox = Inbox(dir: dir)
+        let id = UUID().uuidString
+        #expect(inbox.takeResponse(id: id) == nil)
+        try inbox.writeResponse(Data("{\"ok\":true}".utf8), id: id)
+        #expect(inbox.drain().isEmpty) // responses aren't requests
+        #expect(inbox.takeResponse(id: id) == Data("{\"ok\":true}".utf8))
+        #expect(inbox.takeResponse(id: id) == nil)
+        #expect(Inbox.safe("../../etc/passwd") == "etcpasswd")
+    }
+
+    @Test func menuLabels() {
+        #expect(FormatsResponse.label(.video(maxHeight: 1080)) == "MP4 · 1080p HD")
+        #expect(FormatsResponse.label(.video(maxHeight: 2160)) == "MP4 · 2160p 4K")
+        #expect(FormatsResponse.label(.video(maxHeight: 480)) == "MP4 · 480p")
+        #expect(FormatsResponse.label(.audio(format: .mp3)) == "MP3 · audio only")
+    }
+
+    @Test func findsUnpackedBuildAndSkipsFolders() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let exe = root.appendingPathComponent("yt-dlp/yt-dlp_macos")
+        try FileManager.default.createDirectory(at: exe.deletingLastPathComponent(), withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: exe.path, contents: Data("#!/bin/sh\n".utf8), attributes: [.posixPermissions: 0o755])
+        // The folder "yt-dlp" itself must not be mistaken for the executable.
+        #expect(MediaTools.isExecutableFile(root.appendingPathComponent("yt-dlp")) == false)
+        let tools = MediaTools.locate(bundledDir: root)
+        if tools.ytdlp?.path.hasPrefix(MediaTools.managedBinDir.path) == false {
+            #expect(tools.ytdlp == exe)
+        }
     }
 }

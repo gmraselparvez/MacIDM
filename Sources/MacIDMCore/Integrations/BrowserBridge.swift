@@ -9,6 +9,10 @@ public struct BrowserRequest: Codable, Equatable, Sendable {
     public var cookies: String?
     public var userAgent: String?
     public var fileName: String?
+    /// For "media": a MediaChoice code picked from the on-page quality menu ("video:720", "audio:mp3").
+    public var choice: String?
+    /// For "formats": the helper waits for the app's answer under this id.
+    public var requestID: String?
 
     public init(url: String, referrer: String? = nil, cookies: String? = nil, userAgent: String? = nil, fileName: String? = nil) {
         self.type = "download"
@@ -19,9 +23,12 @@ public struct BrowserRequest: Codable, Equatable, Sendable {
         self.fileName = fileName
     }
 
+    /// A video page (YouTube etc.) for the video grabber rather than a direct file.
+    public var isMedia: Bool { type == "media" }
+
     /// Validates the request and turns it into extra HTTP headers. Returns nil for anything unsafe.
     public func validated() -> (url: URL, headers: [String: String], fileName: String)? {
-        guard type == "download", let url = URL(string: url),
+        guard type == "download" || type == "media" || type == "formats", let url = URL(string: url),
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https", url.host != nil else { return nil }
         var headers: [String: String] = [:]
         func add(_ name: String, _ value: String?) {
@@ -76,6 +83,30 @@ public struct Inbox: Sendable {
         }
         try FileManager.default.moveItem(at: tmp, to: dir.appendingPathComponent("\(Date().timeIntervalSince1970)-\(UUID().uuidString).json"))
     }
+
+    private var responsesDir: URL { dir.appendingPathComponent("responses", isDirectory: true) }
+
+    public func writeResponse(_ data: Data, id: String) throws {
+        try FileManager.default.createDirectory(at: responsesDir, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let tmp = responsesDir.appendingPathComponent(".\(id).tmp")
+        guard FileManager.default.createFile(atPath: tmp.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        let final = responsesDir.appendingPathComponent("\(Self.safe(id)).json")
+        try? FileManager.default.removeItem(at: final)
+        try FileManager.default.moveItem(at: tmp, to: final)
+    }
+
+    /// Returns and deletes the response for `id`, if the app has written it.
+    public func takeResponse(id: String) -> Data? {
+        let file = responsesDir.appendingPathComponent("\(Self.safe(id)).json")
+        guard let data = try? Data(contentsOf: file) else { return nil }
+        try? FileManager.default.removeItem(at: file)
+        return data
+    }
+
+    static func safe(_ id: String) -> String { String(id.filter { $0.isLetter || $0.isNumber || $0 == "-" }.prefix(64)) }
 
     /// Reads and deletes all pending requests, oldest first.
     public func drain() -> [BrowserRequest] {
@@ -148,8 +179,64 @@ public struct NativeHostInstaller: Sendable {
         try Self.manifest(hostPath: hostPath).write(to: url, options: .atomic)
     }
 
+    /// True if the MacIDM extension appears in any profile of this browser.
+    public func isExtensionInstalled(_ browser: Browser) -> Bool {
+        let root = applicationSupport.appendingPathComponent(browser.supportPath)
+        guard let profiles = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return false }
+        let needle = Data(Self.extensionID.utf8)
+        return profiles.contains { profile in
+            ["Secure Preferences", "Preferences"].contains { name in
+                (try? Data(contentsOf: profile.appendingPathComponent(name)))?.range(of: needle) != nil
+            }
+        }
+    }
+
+    /// Re-points existing registrations at `hostPath` (e.g. after the app moved). Returns browsers updated.
+    @discardableResult
+    public func refreshInstalled(hostPath: URL) -> [Browser] {
+        Self.browsers.filter { b in
+            FileManager.default.fileExists(atPath: manifestURL(for: b).path) && !isInstalled(b, hostPath: hostPath)
+                && (try? install(b, hostPath: hostPath)) != nil
+        }
+    }
+
     public func uninstall(_ browser: Browser) throws {
         let url = manifestURL(for: browser)
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+    }
+}
+
+/// Records when the extension last checked in from each browser. The extension sends "hello"
+/// when it's installed or the browser starts; browsers' own profile data is off-limits to other apps.
+public struct ExtensionHeartbeat: Sendable {
+    public let fileURL: URL
+
+    public init(fileURL: URL = DownloadStore.appSupportDir.appendingPathComponent("extension-seen.json")) {
+        self.fileURL = fileURL
+    }
+
+    public func all() -> [String: Date] {
+        guard let data = try? Data(contentsOf: fileURL) else { return [:] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode([String: Date].self, from: data)) ?? [:]
+    }
+
+    public func lastSeen(_ browser: String) -> Date? { all()[browser] }
+
+    public func record(_ browser: String, at date: Date = Date()) throws {
+        var seen = all()
+        seen[browser] = date
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try encoder.encode(seen).write(to: fileURL, options: .atomic)
+    }
+
+    /// Which browser launched the host, from its executable path.
+    public static func browserName(forProcessPath path: String) -> String? {
+        let names: [(String, String)] = [("Microsoft Edge", "Microsoft Edge"), ("Brave Browser", "Brave"),
+                                         ("Chromium", "Chromium"), ("Google Chrome", "Google Chrome")]
+        return names.first { path.contains($0.0) }?.1
     }
 }

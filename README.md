@@ -1,55 +1,158 @@
+<div align="center">
+
+<img src="docs/screenshots/icon.png" width="128" alt="MacIDM icon">
+
 # MacIDM
 
-A native macOS download manager (SwiftUI, macOS 13+). See [MacIDM-SPEC.md](MacIDM-SPEC.md) for the full plan.
+**A fast, native download manager for macOS.**
+Parallel segmented downloads, reliable resume, browser integration and a one-click video grabber, built in Swift and SwiftUI.
 
-## Build & run
+![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black?logo=apple)
+![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white)
+![SwiftUI](https://img.shields.io/badge/UI-SwiftUI-0A84FF)
+![Tests](https://img.shields.io/badge/tests-66%20passing-34C759)
+![Chrome extension](https://img.shields.io/badge/Chrome%20%7C%20Edge%20%7C%20Brave-extension-4285F4?logo=googlechrome&logoColor=white)
 
-No Xcode project is needed: this is a Swift package. You can open `Package.swift` in Xcode, or use the command line:
+<img src="docs/screenshots/main.png" width="820" alt="MacIDM main window">
+
+</div>
+
+---
+
+## Highlights
+
+| | |
+|---|---|
+| ⚡ **Up to 32 parallel connections** | Files are split into segments that download at the same time. When one finishes early, it takes over half of the largest remaining piece, the trick that makes IDM fast. |
+| 🔁 **Resume that survives anything** | Pause, quit, restart your Mac or lose Wi-Fi: progress is saved per segment and checked against what's on disk. If the file changed on the server (ETag / Last-Modified), it starts over instead of corrupting it. |
+| 🎬 **Download this video** | A button appears over videos in Chrome. Pick a quality (4K, 1080p, 720p… or MP3/M4A) right on the page. Powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp). |
+| 🧩 **Browser integration** | Right-click → *Download with MacIDM*, optional automatic capture by file type, and your logged-in downloads keep working. |
+| 🗂 **Tidy by default** | Files land in `Video`, `Music`, `Documents`, `Archives`, `Programs` or `Other`. Names come from the server, and nothing gets overwritten. |
+| 🕑 **Queue & scheduler** | Limit how many run at once, cap the speed (KB/s up to TB/s), start a queue at 2 AM, and optionally sleep the Mac when it's done. |
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/download-window.png" alt="Download window"><br><sub><b>Download window:</b> status, speed limiter, completion options and live per-connection progress.</sub></td>
+    <td width="50%"><img src="docs/screenshots/download-video.png" alt="Download video"><br><sub><b>Video downloads:</b> confirm the quality you picked on the page and choose where to save it.</sub><br><br><img src="docs/screenshots/settings-browser.png" alt="Browser settings"><br><sub><b>One-click browser setup</b> with live status.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/screenshots/settings-video.png" width="420" alt="Video settings"><br><sub><b>Video site support</b> that updates itself, with checksum verification.</sub></td>
+  </tr>
+</table>
+
+## Features
+
+<details open>
+<summary><b>Downloading</b></summary>
+
+- Segmented parallel downloads (default 8, up to 32 connections) with dynamic re-splitting
+- Probes with `HEAD`, falling back to `Range: bytes=0-0`; follows redirects
+- Falls back to a single stream when a server ignores ranges, and handles unknown sizes
+- Retries each connection with exponential backoff, and fails fast on expired links (403/410)
+- Paste a refreshed URL to continue an expired download without losing progress
+- Pauses with a clear message when the disk is full; 64-bit offsets everywhere (files over 4 GB)
+- Per-download and global speed limits, KB/s to TB/s
+</details>
+
+<details>
+<summary><b>Browser (Chrome, Edge, Brave)</b></summary>
+
+- “Download this video” button with an on-page quality menu that starts looking up qualities while you hover
+- Right-click menu for links, images, video and audio
+- Optional auto-capture of browser downloads by file type and minimum size
+- Sends the page address and **only the cookies for the file being downloaded**; nothing from private windows
+- Native-messaging helper registered from Settings, with a pinned extension ID
+</details>
+
+<details>
+<summary><b>Video & audio</b></summary>
+
+- Best, 4K, 1440p, 1080p, 720p … or audio-only MP3 / M4A
+- Saves H.264/AAC MP4 where available, so it plays in QuickTime
+- Uses yt-dlp's unpacked macOS build (starts in ~0.2 s) and updates it in-app with SHA-256 verification
+- Refuses known DRM services (Netflix, Disney+, Prime Video, Spotify…) with a clear message
+</details>
+
+<details>
+<summary><b>Productivity</b></summary>
+
+- Queue with max concurrent downloads, plus a daily scheduler with stop time and sleep-when-done
+- Clipboard watcher (“Download this link?”), drag-and-drop, and batch patterns like `photo[001-120].jpg`
+- Import/export the list as JSON or TXT (cookies never exported)
+- Menu bar extra, notifications, open at login, and auto-resume after wake or network loss
+</details>
+
+## Getting started
+
+Requires macOS 13 Ventura or later. Xcode is optional: the Command Line Tools are enough.
 
 ```bash
-swift test                 # unit + engine tests
-./scripts/fetch-tools.sh   # downloads yt-dlp into vendor/ (checksum-verified) for bundling
-./scripts/make-app.sh      # builds build/MacIDM.app (ad-hoc signed; SIGN_IDENTITY=... for Developer ID)
-./scripts/make-dmg.sh      # packages build/MacIDM-<version>.dmg
+git clone https://github.com/gmraselparvez/MacIDM.git
+cd MacIDM
+./scripts/fetch-tools.sh     # downloads yt-dlp (checksum-verified) for bundling
+./scripts/make-app.sh        # builds and signs build/MacIDM.app
 open build/MacIDM.app
 ```
 
-## Layout
+For HD video merging and MP3/M4A conversion, install ffmpeg: `brew install ffmpeg`.
 
-- `Sources/MacIDMCore`: the download engine. It has no UI code and is tested on its own.
-  - `Core/ProbeService`: sends HEAD, falling back to `Range: bytes=0-0`, to get size, range support, file name, ETag and Last-Modified.
-  - `Core/SegmentPlanner`: splits the file into segments, and splits the largest remaining segment when a connection frees up.
-  - `Core/SegmentedDownloader`: actor that runs one download (parallel ranges, retry with backoff, falls back to one stream when the server ignores Range, merges at the end).
-  - `Core/DownloadEngine`: actor that owns all running downloads (start, pause, cancel).
-  - `Core/SpeedLimiter` (global token bucket), `Core/QueueManager` (concurrency slots and clipboard link detection), `Core/Scheduler` (daily start/stop time math).
-  - `Core/FileMerger`, `Core/FileNaming`, `Models/*`, `Persistence/Store` (JSON in `~/Library/Application Support/MacIDM`).
-- `Sources/MacIDM`: the SwiftUI app (main window, add sheet, segment bar, settings, menu bar extra). `Integrations/SystemWatchers` holds the clipboard watcher, network monitor, notifications and sleep.
-- `Tests/MacIDMCoreTests`: swift-testing suites. The engine tests run against an in-process fake HTTP server.
+### Connect your browser
 
-Part files live in `~/Library/Application Support/MacIDM/Parts/<id>/`. Finished files go to `~/Downloads/MacIDM/<Category>/`.
+1. In MacIDM, open **Settings › Browser** and click **Set Up** next to your browser.
+2. MacIDM opens the browser's Extensions page and copies the extension folder path. Turn on **Developer mode**, click **Load unpacked**, press **⇧⌘G**, paste, and choose **Select**.
+3. The row turns **Ready**. Hover any video and look for **Download this video**.
 
-## Browser integration (Chrome, Edge, Brave)
+## Keyboard shortcuts
 
-1. Build and open `build/MacIDM.app`. In **Settings › Browser**, click **Install** next to each browser. This registers the `MacIDMHost` native messaging helper.
-2. Open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and choose `BrowserExtension/chrome` (Settings › Browser › Show Extension Folder opens it).
-3. Right-click a link or video and choose **Download with MacIDM**. Auto-capture by file type is in the extension's options.
+| Action | Shortcut | Action | Shortcut |
+|---|---|---|---|
+| Add URL | ⌘N | Resume | ⌘R |
+| Grab Video | ⇧⌘N | Pause | ⌘. |
+| Batch Download | ⌥⌘N | Stop | ⇧⌘. |
+| Import list | ⌘O | Resume All | ⇧⌘R |
+| Export list | ⇧⌘E | Pause All | ⇧⌘P |
+| Show in Finder | ⌥⌘F | Open | ⌘↓ |
 
-The extension's ID is pinned to `hmjonefkfhiehppllmijhjlmcnnhacnk` by the `key` in its manifest, so the host's `allowed_origins` stay valid. The helper writes requests to `~/Library/Application Support/MacIDM/Inbox/` (owner-only files) and wakes or launches the app.
+## How it works
 
-Safari needs full Xcode; see [BrowserExtension/safari/README.md](BrowserExtension/safari/README.md).
+```mermaid
+flowchart LR
+    subgraph Browser
+      E[MacIDM extension]
+    end
+    E -- native messaging --> H[MacIDMHost helper]
+    H -- inbox --> A[MacIDM app]
+    A --> D[DownloadEngine actor]
+    D --> S[SegmentedDownloader<br/>parallel HTTP ranges]
+    D --> M[MediaDownloader<br/>yt-dlp + ffmpeg]
+    S --> F[(Category folders)]
+    M --> F
+```
 
-## Video grabber (yt-dlp)
+| Folder | What's inside |
+|---|---|
+| `Sources/MacIDMCore` | UI-independent engine: probing, segment planning, parallel download, merge, resume, speed limiter, queue, scheduler, yt-dlp integration |
+| `Sources/MacIDM` | SwiftUI app: main window, download windows, settings, menu bar |
+| `Sources/MacIDMHost` | Native-messaging helper for the browser extension |
+| `BrowserExtension/` | Chrome/Edge/Brave MV3 extension, plus the Safari handler (needs Xcode) |
+| `Tests/MacIDMCoreTests` | 66 swift-testing tests, including an in-process fake HTTP server |
 
-**File › Grab Video…** (⇧⌘N): paste a page URL, pick a quality (best, a resolution, or audio-only MP3/M4A) and download. Progress shows in the main list like any other download, and pause/resume works.
+Run the tests with `swift test`. Launch with `MACIDM_DEMO=1` to show sample downloads without saving or downloading anything (handy for screenshots).
 
-- yt-dlp is looked up in this order: `~/Library/Application Support/MacIDM/bin` (the copy that **Settings › Media › Update yt-dlp** keeps current), then the app bundle, then Homebrew/PATH.
-- ffmpeg merges video and audio and converts to MP3/M4A. It isn't bundled: Homebrew's build links to Homebrew libraries. Put a static ffmpeg at `vendor/ffmpeg` to bundle one.
-- Known DRM streaming services (Netflix, Disney+, Spotify, Prime Video and others) are refused with a clear message, and DRM errors from yt-dlp are reported the same way. MacIDM never tries to bypass DRM.
+## Privacy & responsible use
 
-## Batch, import/export and shortcuts
+- Everything runs locally. MacIDM doesn't collect or send any data.
+- Browser cookies are used only for the exact file you download, are never exported, and are deleted when the download finishes.
+- MacIDM does **not** bypass DRM, paywalls, captchas or logins. Only download content you have the right to download.
 
-- **File › Batch Download…** (⌥⌘N): paste links, one per line. Ranges expand: `photo[001-120].jpg`, `ep[1-12].mp4`, `part[a-f].zip`, and several ranges multiply out.
-- **File › Import List…** (⌘O) takes a MacIDM `.json` export or a `.txt` list. Imported downloads go into the queue, and completed ones are skipped. **Export List…** (⇧⌘E) writes `.json` (names and video choices) or `.txt` (links only). Cookies are never exported.
-- **Downloads** menu: Resume ⌘R, Pause ⌘., Stop ⇧⌘., Start Now ⌥⌘R, Resume All ⇧⌘R, Pause All ⇧⌘P, Open ⌘↓, Show in Finder ⌥⌘F.
+## Releasing
 
-Releasing (Developer ID signing, notarization, DMG): see [docs/RELEASING.md](docs/RELEASING.md). The icon is generated by `swift scripts/make-icon.swift`.
+Developer ID signing, notarization and DMG packaging are covered in [docs/RELEASING.md](docs/RELEASING.md).
+
+## Acknowledgments
+
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) for video site support
+- [FFmpeg](https://ffmpeg.org) for merging and conversion
+- Inspired by Internet Download Manager. MacIDM is an independent project, not affiliated with or endorsed by Tonec Inc.
